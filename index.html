@@ -173,6 +173,7 @@
         <label>Nafn</label><input id="sName" autocomplete="off">
         <label>Símanúmer</label><input id="sPhone" type="tel">
         <label>Netfang</label><input id="sEmail" type="email">
+        <label>Forgjöf</label><input id="sHandicap" type="number" step="0.1" inputmode="decimal">
         <label>Markmið</label><input id="sGoal">
         <label>Athugasemdir</label><textarea id="sNotes" rows="2"></textarea>
         <button id="addStudentBtn">Vista nemanda</button>
@@ -358,12 +359,12 @@ async function deleteCalendarEvent(id) {
 async function loadAll() {
   msg('Hleð gögnum...');
   const [n, t, g, s] = await Promise.all([
-    getRows("'Nemendur'!A2:F"),
+    getRows("'Nemendur'!A2:G"),
     getRows("'Tímar'!A2:I"),
     getRows("'Greiðslur'!A2:E"),
     getRows("'Stillingar'!B1")
   ]);
-  students = n.map((r, i) => ({ row: i + 2, name: r[0] || '', phone: r[1] || '', email: r[2] || '', goal: r[3] || '', notes: r[4] || '' }))
+  students = n.map((r, i) => ({ row: i + 2, name: r[0] || '', phone: r[1] || '', email: r[2] || '', goal: r[3] || '', notes: r[4] || '', handicap: r[6] || '' }))
               .filter(x => x.name);
   lessons = t.map((r, i) => ({ row: i + 2, name: r[0] || '', date: r[1] || '', time: r[2] || '', mins: r[3] || '',
                                status: r[4] || '', paid: r[5] || 'nei', notes: r[6] || '', eventId: r[7] || '', location: r[8] || '' }))
@@ -501,7 +502,8 @@ function renderList() {
     const div = document.createElement('div');
     div.className = 'row';
     div.style.cursor = 'pointer';
-    div.innerHTML = `<div><strong>${esc(s.name)}</strong><div class="muted">${esc(s.phone)}</div></div>` +
+    const details = [s.phone, s.email, s.handicap ? 'Forgjöf ' + s.handicap : ''].filter(Boolean).map(esc).join(' · ');
+    div.innerHTML = `<div><strong>${esc(s.name)}</strong><div class="muted">${details}</div></div>` +
                     (unpaid ? `<span class="badge">${unpaid} ógreitt</span>` : '');
     div.onclick = () => showDetail(s.name);
     el.appendChild(div);
@@ -514,6 +516,7 @@ function renderDetail() {
   $('detailTitle').textContent = s.name;
   $('studentInfo').innerHTML =
     `<div class="muted">${esc(s.phone)} ${s.email ? '· ' + esc(s.email) : ''}</div>` +
+    (s.handicap ? `<div>Forgjöf: ${esc(s.handicap)}</div>` : '') +
     (s.goal ? `<div>${esc(s.goal)}</div>` : '') +
     (s.notes ? `<div class="muted">${esc(s.notes)}</div>` : '');
 
@@ -621,9 +624,9 @@ async function addStudent() {
   if (students.some(s => s.name === name)) { msg('Nemandi með þessu nafni er þegar til.', true); return; }
   try {
     msg('Vista...');
-    await appendRow("'Nemendur'!A:F", [name, $('sPhone').value.trim(), $('sEmail').value.trim(),
-                                        $('sGoal').value.trim(), $('sNotes').value.trim(), '']);
-    ['sName', 'sPhone', 'sEmail', 'sGoal', 'sNotes'].forEach(id => $(id).value = '');
+    await appendRow("'Nemendur'!A:G", [name, $('sPhone').value.trim(), $('sEmail').value.trim(),
+                                        $('sGoal').value.trim(), $('sNotes').value.trim(), '', $('sHandicap').value.trim()]);
+    ['sName', 'sPhone', 'sEmail', 'sHandicap', 'sGoal', 'sNotes'].forEach(id => $(id).value = '');
     await loadAll();
     goTab('students');
     msg('Nemandi vistaður.');
