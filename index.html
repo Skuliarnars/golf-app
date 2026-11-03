@@ -38,8 +38,12 @@
   .big { font-size: 20px; font-weight: 600; margin: 2px 0 8px; }
   .big.danger { color: #b00020; }
   .big.success { color: #1f5c35; }
-  #lStudents label { display: flex; gap: 8px; align-items: center; font-size: 16px; color: #1d2a1f; padding: 6px 0; }
-  #lStudents input { width: auto; margin: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .chip { background: #d6f0de; color: #1f5c35; border-radius: 999px; padding: 4px 4px 4px 12px; font-size: 15px;
+          display: inline-flex; align-items: center; gap: 2px; }
+  .chip-x { background: transparent; color: #1f5c35; padding: 0 8px; font-size: 18px; line-height: 1; }
+  #lStudents input { width: 100%; }
+  .result { display: block; width: 100%; text-align: left; margin-bottom: 6px; }
   .fab { position: fixed; right: 16px; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); width: 56px; height: 56px;
          border-radius: 50%; font-size: 30px; line-height: 1; padding: 0; display: flex; align-items: center; justify-content: center;
          box-shadow: 0 2px 8px rgba(0,0,0,.25); z-index: 6; }
@@ -548,31 +552,72 @@ function renderList() {
   el.innerHTML = '';
   if (!students.length) { el.innerHTML = '<p class="muted">Engir nemendur enn.</p>'; return; }
   students.forEach(s => {
-    const unpaid = lessons.filter(l => l.name === s.name && l.paid.toLowerCase() !== 'já').length;
+    const owed = lessons
+      .filter(l => l.name === s.name && l.status !== 'Aflýst' && l.paid.toLowerCase() !== 'já')
+      .reduce((sum, l) => sum + lessonPrice(l), 0);
     const div = document.createElement('div');
     div.className = 'row';
     div.style.cursor = 'pointer';
     const details = [s.phone, s.email, s.handicap ? 'Forgjöf ' + s.handicap : ''].filter(Boolean).map(esc).join(' · ');
     div.innerHTML = `<div><strong>${esc(s.name)}</strong><div class="muted">${details}</div></div>` +
-                    (unpaid ? `<span class="badge">${unpaid} ógreitt</span>` : '');
+                    (owed ? `<span class="badge">Skuldar ${owed.toLocaleString('is-IS')} kr.</span>` : '');
     div.onclick = () => showDetail(s.name);
     el.appendChild(div);
   });
 }
 
-// Krossar valið í bókunarforminu: nemendur í tímanum eru hakaðir, sá sem er opinn er hakaður sjálfgefið.
+// Nemendur í bókuninni: leitað að nafni og valið. Nemandinn sem er opinn er valinn sjálfgefið.
+let bookSelected = [];
 function renderBookStudents() {
+  bookSelected = currentStudent ? [currentStudent.name] : [];
+  drawBook();
+}
+function drawBook() {
   const el = $('lStudents');
   el.innerHTML = '';
-  if (!students.length) { el.innerHTML = '<p class="muted">Engir nemendur enn.</p>'; return; }
-  students.forEach(s => {
-    const label = document.createElement('label');
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.value = s.name;
-    cb.checked = currentStudent ? s.name === currentStudent.name : false;
-    label.append(cb, document.createTextNode(s.name));
-    el.appendChild(label);
+
+  const chips = document.createElement('div');
+  chips.className = 'chips';
+  bookSelected.forEach(name => {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.textContent = name;
+    const x = document.createElement('button');
+    x.className = 'chip-x';
+    x.textContent = '×';
+    x.onclick = () => { bookSelected = bookSelected.filter(n => n !== name); drawBook(); };
+    chip.appendChild(x);
+    chips.appendChild(chip);
+  });
+  el.appendChild(chips);
+
+  const search = document.createElement('input');
+  search.type = 'search';
+  search.placeholder = 'Leita að nemanda...';
+  search.autocomplete = 'off';
+  el.appendChild(search);
+
+  const results = document.createElement('div');
+  results.id = 'lResults';
+  el.appendChild(results);
+
+  search.oninput = () => drawResults(search.value);
+}
+function drawResults(query) {
+  const box = $('lResults');
+  box.innerHTML = '';
+  const term = query.trim().toLowerCase();
+  if (!term) return;
+  const matches = students
+    .filter(s => !bookSelected.includes(s.name) && s.name.toLowerCase().includes(term))
+    .slice(0, 6);
+  if (!matches.length) { box.innerHTML = '<p class="muted">Enginn nemandi fannst.</p>'; return; }
+  matches.forEach(s => {
+    const b = document.createElement('button');
+    b.className = 'secondary result';
+    b.textContent = s.name;
+    b.onclick = () => { bookSelected.push(s.name); drawBook(); };
+    box.appendChild(b);
   });
 }
 
@@ -784,7 +829,7 @@ async function bookLesson() {
     location = $('lLocationOther').value.trim();
     if (!location) { msg('Skrifaðu staðsetninguna.', true); return; }
   }
-  const names = [...document.querySelectorAll('#lStudents input:checked')].map(i => i.value);
+  const names = [...bookSelected];
   if (!names.length) { msg('Veldu að minnsta kosti einn nemanda.', true); return; }
   const chosen = names.map(n => students.find(s => s.name === n)).filter(Boolean);
 
