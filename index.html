@@ -716,13 +716,24 @@ async function changeStatus(l) {
   } catch (e) { msg(e.message, true); }
 }
 
+// Hver greidd tími fær færslu í Greiðslur með athugasemdinni "Tími <dagsetning> <tími>" svo hægt sé að finna hana aftur.
+function paymentMarker(l) { return `Tími ${l.date} ${l.time}`; }
+function findLessonPayment(l) { return payments.find(p => p.name === l.name && p.notes === paymentMarker(l)); }
+
 async function togglePaid(l) {
-  const next = l.paid.toLowerCase() === 'já' ? 'nei' : 'já';
+  const becomingPaid = l.paid.toLowerCase() !== 'já';
   try {
-    await setCell(`'Tímar'!F${l.row}`, next);
-    l.paid = next;
-    renderAll();
-    msg('Vistað.');
+    msg('Vista...');
+    if (becomingPaid) {
+      await setCell(`'Tímar'!F${l.row}`, 'já');
+      await appendRow("'Greiðslur'!A:E", [l.name, todayISO(), LESSON_PRICE, '', paymentMarker(l)]);
+    } else {
+      await setCell(`'Tímar'!F${l.row}`, 'nei');
+      const p = findLessonPayment(l);
+      if (p) await deleteRows([{ sheetId: 2, row: p.row }]);
+    }
+    await loadAll();
+    msg(becomingPaid ? 'Merkt greitt og greiðslu bætt við.' : 'Afmerkt og greiðslu eytt.');
   } catch (e) { msg(e.message, true); }
 }
 
@@ -731,7 +742,8 @@ async function deleteLesson(l) {
   try {
     msg('Eyði tíma...');
     const calOk = await deleteCalendarEvent(l.eventId);
-    await deleteRows([{ sheetId: 1, row: l.row }]);
+    const linked = l.paid.toLowerCase() === 'já' ? findLessonPayment(l) : null;
+    await deleteRows([{ sheetId: 1, row: l.row }, ...(linked ? [{ sheetId: 2, row: linked.row }] : [])]);
     await loadAll();
     msg(calOk ? 'Tíma eytt.' : 'Tíma eytt úr töflunni, en viðburðinn í dagatalinu þarf að eyða handvirkt.', !calOk);
   } catch (e) { msg(e.message, true); }
