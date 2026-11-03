@@ -167,6 +167,7 @@
 
       <div class="card">
         <h2>Tímar</h2>
+        <button id="applyCreditBtn" class="secondary" style="margin-bottom:10px">Ráðstafa inneign á ógreidda tíma</button>
         <div id="lessonList"></div>
       </div>
 
@@ -920,8 +921,12 @@ async function togglePaid(l) {
   try {
     msg('Vista...');
     if (becomingPaid) {
+      // Inneign nemandans nær fyrst yfir tímann. Aðeins það sem vantar er skráð sem greiðsla.
+      const pre = studentBalance(l.name) - lessonPrice(l);
+      const credit = Math.max(0, -pre);
+      const toPay = Math.max(0, lessonPrice(l) - credit);
       await setCell(`'Tímar'!F${l.row}`, 'já');
-      await appendRow("'Greiðslur'!A:E", [l.name, todayISO(), lessonPrice(l), '', paymentMarker(l)]);
+      if (toPay > 0) await appendRow("'Greiðslur'!A:E", [l.name, todayISO(), toPay, '', paymentMarker(l)]);
     } else {
       await setCell(`'Tímar'!F${l.row}`, 'nei');
       const p = findLessonPayment(l);
@@ -945,6 +950,34 @@ async function deleteLesson(l) {
     msg(calOk ? 'Tíma eytt.' : 'Tíma eytt úr töflunni, en viðburðinn í dagatalinu þarf að eyða handvirkt.', !calOk);
   } catch (e) { msg(e.message, true); }
 }
+
+// Merkir elstu ógreiddu tímana greidda á meðan inneign nemandans dugar fyrir þeim.
+// Engin ný greiðslufærsla er búin til, því inneignin er þegar dregin frá í stöðunni.
+async function applyCredit() {
+  if (!currentStudent) return;
+  const name = currentStudent.name;
+  const unpaidOpen = lessons
+    .filter(l => l.name === name && l.status !== 'Aflýst' && l.paid.toLowerCase() !== 'já')
+    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  const unpaidTotal = unpaidOpen.reduce((sum, l) => sum + lessonPrice(l), 0);
+  // Inneignin fyrir ógreidda tíma = summa ógreiddra tíma mínus stöðuna (neikvæð staða = inneign)
+  let credit = unpaidTotal - studentBalance(name);
+  const covered = [];
+  for (const l of unpaidOpen) {
+    const p = lessonPrice(l);
+    if (credit < p) break;
+    covered.push(l);
+    credit -= p;
+  }
+  if (!covered.length) { msg('Engin inneign dugar fyrir ógreiddum tíma.', true); return; }
+  try {
+    msg('Ráðstafa inneign...');
+    for (const l of covered) await setCell(`'Tímar'!F${l.row}`, 'já');
+    await loadAll();
+    msg(`${covered.length} tímar merktir greiddir með inneigninni.`);
+  } catch (e) { msg(e.message, true); }
+}
+$('applyCreditBtn').onclick = applyCredit;
 
 // ----- Athugasemdir við tíma -----
 function showLessonEdit(row) {
