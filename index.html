@@ -130,7 +130,10 @@
       <div class="card">
         <h2 id="detailTitle"></h2>
         <div id="studentInfo"></div>
-        <button id="deleteStudentBtn" class="danger" style="margin-top:10px">Eyða nemanda</button>
+        <div class="actions" style="margin-top:10px">
+          <button id="editStudentBtn" class="secondary">Breyta</button>
+          <button id="deleteStudentBtn" class="danger">Eyða nemanda</button>
+        </div>
       </div>
 
       <div class="card">
@@ -180,6 +183,20 @@
       </div>
     </div>
 
+    <!-- Breyta nemanda -->
+    <div id="editStudentView" class="hidden">
+      <div class="card">
+        <h2>Breyta nemanda</h2>
+        <div id="esName" class="muted" style="margin-bottom:10px"></div>
+        <label>Símanúmer</label><input id="esPhone" type="tel">
+        <label>Netfang</label><input id="esEmail" type="email">
+        <label>Forgjöf</label><input id="esHandicap" type="number" step="0.1" inputmode="decimal">
+        <label>Markmið</label><input id="esGoal">
+        <label>Athugasemdir</label><textarea id="esNotes" rows="2"></textarea>
+        <button id="saveStudentBtn">Vista breytingar</button>
+      </div>
+    </div>
+
     <!-- Athugasemd við tíma -->
     <div id="lessonEditView" class="hidden">
       <div class="card">
@@ -213,7 +230,7 @@ const ALLOWED_EMAIL = 'skuliarnars12@gmail.com';
 const SCOPES = 'openid email https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/calendar.events';
 const TZ = 'Atlantic/Reykjavik';
 const STATUSES = ['Bokaður', 'Mættur', 'Aflýst'];
-const VIEWS = ['dashView', 'listView', 'lessonsView', 'paymentsView', 'settingsView', 'detailView', 'addView', 'lessonEditView'];
+const VIEWS = ['dashView', 'listView', 'lessonsView', 'paymentsView', 'settingsView', 'detailView', 'addView', 'lessonEditView', 'editStudentView'];
 let backTarget = () => goTab('students');
 let editingLessonRow = null;
 const TABS = {
@@ -427,6 +444,48 @@ $('tabLessons').onclick = () => goTab('lessons');
 $('tabPayments').onclick = () => goTab('payments');
 $('tabSettings').onclick = () => goTab('settings');
 $('addNewBtn').onclick = showAdd;
+
+// ----- Breyta nemanda -----
+function showEditStudent() {
+  const s = currentStudent;
+  if (!s) return;
+  $('esName').textContent = s.name;
+  $('esPhone').value = s.phone;
+  $('esEmail').value = s.email;
+  $('esHandicap').value = s.handicap;
+  $('esGoal').value = s.goal;
+  $('esNotes').value = s.notes;
+  VIEWS.forEach(v => $(v).classList.toggle('hidden', v !== 'editStudentView'));
+  $('tabBar').classList.add('hidden');
+  $('addNewBtn').classList.add('hidden');
+  $('backBtn').classList.remove('hidden');
+  $('title').textContent = 'Breyta nemanda';
+  backTarget = () => showDetail(s.name);
+  msg('');
+}
+async function saveStudent() {
+  const s = currentStudent;
+  if (!s) return;
+  try {
+    msg('Vista...');
+    // Nafnið er ekki breytt, því tímar og greiðslur tengjast nemandanum í gegnum nafnið.
+    await api(sheetUrl(`'Nemendur'!B${s.row}:E${s.row}`) + '?valueInputOption=USER_ENTERED', {
+      method: 'PUT',
+      body: JSON.stringify({ values: [[
+        $('esPhone').value.trim(),
+        $('esEmail').value.trim(),
+        $('esGoal').value.trim(),
+        $('esNotes').value.trim()
+      ]] })
+    });
+    await setCell(`'Nemendur'!G${s.row}`, $('esHandicap').value.trim());
+    await loadAll();
+    showDetail(s.name);
+    msg('Upplýsingar vistaðar.');
+  } catch (e) { msg(e.message, true); }
+}
+$('editStudentBtn').onclick = showEditStudent;
+$('saveStudentBtn').onclick = saveStudent;
 
 // ----- Athugasemdir við tíma -----
 function showLessonEdit(row) {
