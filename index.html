@@ -19,6 +19,7 @@
   button { background: #1f5c35; color: #fff; border: 0; border-radius: 8px; padding: 10px 14px; font-size: 15px; cursor: pointer; }
   button.secondary { background: #e6ece7; color: #1d2a1f; }
   button.ghost { background: transparent; color: #fff; padding: 6px 8px; }
+  button.danger { background: #b00020; color: #fff; padding: 6px 10px; }
   input, textarea { width: 100%; padding: 10px; font-size: 16px; border: 1px solid #c9d3cb; border-radius: 8px; margin: 4px 0 10px; font-family: inherit; }
   label { font-size: 14px; color: #4a5a4e; }
   .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid #eef1ee; }
@@ -73,6 +74,7 @@
       <div class="card">
         <h2 id="detailTitle"></h2>
         <div id="studentInfo"></div>
+        <button id="deleteStudentBtn" class="danger" style="margin-top:10px">Eyða nemanda</button>
       </div>
 
       <div class="card">
@@ -309,7 +311,11 @@ function renderDetail() {
     const isPaid = l.paid.toLowerCase() === 'já';
     paidBtn.textContent = isPaid ? 'Greitt ✓' : 'Ógreitt';
     paidBtn.onclick = () => togglePaid(l);
-    actions.append(statusBtn, paidBtn);
+    const delBtn = document.createElement('button');
+    delBtn.className = 'danger';
+    delBtn.textContent = '✕';
+    delBtn.onclick = () => deleteLesson(l);
+    actions.append(statusBtn, paidBtn, delBtn);
     div.appendChild(actions);
     lessonEl.appendChild(div);
   });
@@ -324,6 +330,12 @@ function renderDetail() {
     div.className = 'row';
     div.innerHTML = `<div>${esc(p.date)} <span class="muted">${p.notes ? '· ' + esc(p.notes) : ''}</span></div>
                      <strong>${esc(p.amount)} kr.</strong>`;
+    const delP = document.createElement('button');
+    delP.className = 'danger';
+    delP.textContent = '✕';
+    delP.style.marginLeft = '8px';
+    delP.onclick = () => deletePayment(p);
+    div.appendChild(delP);
     payEl.appendChild(div);
   });
 }
@@ -416,6 +428,76 @@ async function addPayment() {
   } catch (e) { msg(e.message, true); }
 }
 $('addPaymentBtn').onclick = addPayment;
+
+// ----- Eyðing -----
+// Eyðir línum úr töflu. Línunúmer eru 1-byggð (eins og í Sheets), sheetId: 0=Nemendur, 1=Tímar, 2=Greiðslur
+async function deleteRows(items) {
+  const requests = [...items]
+    .sort((a, b) => a.sheetId - b.sheetId || b.row - a.row)
+    .map(i => ({ deleteDimension: { range: { sheetId: i.sheetId, dimension: 'ROWS', startIndex: i.row - 1, endIndex: i.row } } }));
+  if (!requests.length) return;
+  await api(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}:batchUpdate`, {
+    method: 'POST',
+    body: JSON.stringify({ requests })
+  });
+}
+
+async function deleteCalendarEvent(id) {
+  if (!id) return true;
+  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': 'Bearer ' + accessToken }
+  });
+  return res.ok || res.status === 404 || res.status === 410;
+}
+
+async function deleteLesson(l) {
+  if (!confirm(`Eyða tíma ${l.date} kl. ${l.time} hjá ${l.name}?`)) return;
+  try {
+    msg('Eyði tíma...');
+    const calOk = await deleteCalendarEvent(l.eventId);
+    await deleteRows([{ sheetId: 1, row: l.row }]);
+    await loadAll();
+    msg(calOk ? 'Tíma eytt.' : 'Tíma eytt úr töflunni, en viðburðinn í dagatalinu þarf að eyða handvirkt.', !calOk);
+  } catch (e) { msg(e.message, true); }
+}
+
+async function deletePayment(p) {
+  if (!confirm(`Eyða greiðslu ${p.amount} kr. frá ${p.date}?`)) return;
+  try {
+    msg('Eyði greiðslu...');
+    await deleteRows([{ sheetId: 2, row: p.row }]);
+    await loadAll();
+    msg('Greiðslu eytt.');
+  } catch (e) { msg(e.message, true); }
+}
+
+async function deleteStudent() {
+  if (!currentStudent) return;
+  const name = currentStudent.name;
+  const myLessons = lessons.filter(l => l.name === name);
+  const myPayments = payments.filter(p => p.name === name);
+  if (!confirm(`Eyða nemandanum ${name}, ${myLessons.length} tímum og ${myPayments.length} greiðslum? Viðburðum í Google Calendar fyrir tímana verður líka eytt. Ekki hægt að afturkalla.`)) return;
+  try {
+    msg('Eyði nemanda...');
+    let calFailed = 0;
+    for (const l of myLessons) {
+      if (!(await deleteCalendarEvent(l.eventId))) calFailed++;
+    }
+    await deleteRows([
+      ...myLessons.map(l => ({ sheetId: 1, row: l.row })),
+      ...myPayments.map(p => ({ sheetId: 2, row: p.row })),
+      { sheetId: 0, row: currentStudent.row }
+    ]);
+    currentStudent = null;
+    await loadAll();
+    showList();
+    msg(calFailed
+      ? `Nemanda eytt, en ${calFailed} viðburðum í dagatalinu þarf að eyða handvirkt.`
+      : 'Nemanda eytt.', calFailed > 0);
+  } catch (e) { msg(e.message, true); }
+}
+$('deleteStudentBtn').onclick = deleteStudent;
 </script>
 </body>
 </html>
