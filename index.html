@@ -277,6 +277,24 @@ function cleanHandicap(raw) {
   return v.startsWith('+') ? "'" + v : v;
 }
 
+// Geymir aðgangslykilinn í vafranum svo síðan haldi innskráningu við endurhleðslu (gildir í um klukkutíma).
+function saveToken(token, expiresIn) {
+  try {
+    localStorage.setItem('golf_token', JSON.stringify({ token, exp: Date.now() + (expiresIn - 60) * 1000 }));
+  } catch (e) { /* ekki tiltækt */ }
+}
+function loadSavedToken() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('golf_token') || 'null');
+    if (saved && saved.exp > Date.now()) return saved.token;
+    localStorage.removeItem('golf_token');
+  } catch (e) { /* ekki tiltækt */ }
+  return null;
+}
+function clearSavedToken() {
+  try { localStorage.removeItem('golf_token'); } catch (e) { /* ekki tiltækt */ }
+}
+
 // ----- Innskráning -----
 window.addEventListener('load', () => {
   if (!window.google || !google.accounts) {
@@ -288,6 +306,8 @@ window.addEventListener('load', () => {
     scope: SCOPES,
     callback: onToken
   });
+  const saved = loadSavedToken();
+  if (saved) onToken({ access_token: saved });
 });
 
 $('loginBtn').onclick = () => {
@@ -298,6 +318,7 @@ $('loginBtn').onclick = () => {
 async function onToken(resp) {
   if (resp.error) { msg('Innskráning mistókst: ' + resp.error, true); return; }
   accessToken = resp.access_token;
+  if (resp.expires_in) saveToken(accessToken, resp.expires_in);
   try {
     const info = await api('https://www.googleapis.com/oauth2/v3/userinfo');
     if (info.email !== ALLOWED_EMAIL) {
@@ -321,6 +342,7 @@ async function onToken(resp) {
 $('logoutBtn').onclick = () => {
   if (accessToken) google.accounts.oauth2.revoke(accessToken, () => {});
   accessToken = null;
+  clearSavedToken();
   location.reload();
 };
 
@@ -334,6 +356,10 @@ async function api(url, opts = {}) {
       ...(opts.headers || {})
     }
   });
+  if (res.status === 401) {
+    clearSavedToken();
+    throw new Error('Innskráningin er útrunnin. Skráðu þig inn aftur.');
+  }
   if (!res.ok) {
     const t = await res.text();
     throw new Error(res.status + ' ' + t.slice(0, 200));
