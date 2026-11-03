@@ -395,13 +395,15 @@ async function bookLesson() {
 
   try {
     msg('Bóka tíma...');
-    const ev = await api('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+    const studentEmail = (currentStudent.email || '').trim();
+    const ev = await api(`https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=${studentEmail ? 'all' : 'none'}`, {
       method: 'POST',
       body: JSON.stringify({
         summary: `${name} - golfkennsla`,
         description: notes,
         start: { dateTime: startDT, timeZone: TZ },
-        end: { dateTime: endDT, timeZone: TZ }
+        end: { dateTime: endDT, timeZone: TZ },
+        attendees: studentEmail ? [{ email: studentEmail }] : []
       })
     });
     await appendRow("'Tímar'!A:H", [name, date, time, mins, 'Bokaður', 'nei', notes, ev.id]);
@@ -465,7 +467,7 @@ async function deleteRows(items) {
 
 async function deleteCalendarEvent(id) {
   if (!id) return true;
-  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(id)}`, {
+  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(id)}?sendUpdates=all`, {
     method: 'DELETE',
     headers: { 'Authorization': 'Bearer ' + accessToken }
   });
