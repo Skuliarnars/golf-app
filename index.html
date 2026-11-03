@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="is">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Golfkennsla">
+<title>Golfkennsla</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: #f4f6f4; color: #1d2a1f; }
+  header { background: #1f5c35; color: #fff; padding: 14px 16px; padding-top: calc(14px + env(safe-area-inset-top, 0px));
+           display: flex; justify-content: space-between; align-items: center; gap: 8px; position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; flex: 1; }
+  main { padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); max-width: 640px; margin: 0 auto; }
+  .card { background: #fff; border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  button { background: #1f5c35; color: #fff; border: 0; border-radius: 8px; padding: 10px 14px; font-size: 15px; cursor: pointer; }
+  button.secondary { background: #e6ece7; color: #1d2a1f; }
+  button.ghost { background: transparent; color: #fff; padding: 6px 8px; }
+  input, textarea { width: 100%; padding: 10px; font-size: 16px; border: 1px solid #c9d3cb; border-radius: 8px; margin: 4px 0 10px; font-family: inherit; }
+  label { font-size: 14px; color: #4a5a4e; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid #eef1ee; }
+  .row:last-child { border-bottom: 0; }
+  .muted { color: #6b776e; font-size: 14px; }
+  .badge { background: #fde9c8; color: #7a4a00; border-radius: 999px; padding: 2px 8px; font-size: 12px; white-space: nowrap; }
+  h2 { font-size: 17px; margin: 4px 0 10px; }
+  .hidden { display: none !important; }
+  .status { min-height: 20px; font-size: 14px; margin: 8px 0; color: #1f5c35; }
+  .status.err { color: #b00020; }
+  .center { text-align: center; padding-top: 60px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .actions button { flex: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1 id="title">Golfkennsla</h1>
+  <button id="backBtn" class="ghost hidden">← Til baka</button>
+  <button id="logoutBtn" class="ghost hidden">Út</button>
+</header>
+
+<main>
+  <!-- Innskráning -->
+  <div id="loginView" class="center">
+    <h2>Golfkennsla</h2>
+    <p class="muted">Skráðu þig inn með Google til að halda áfram.</p>
+    <button id="loginBtn">Skrá inn með Google</button>
+  </div>
+
+  <!-- Listi yfir nemendur -->
+  <div id="appView" class="hidden">
+    <div id="listView">
+      <div class="card">
+        <h2>Nemendur</h2>
+        <div id="studentList"></div>
+      </div>
+      <div class="card">
+        <h2>Nýr nemandi</h2>
+        <label>Nafn</label><input id="sName" autocomplete="off">
+        <label>Símanúmer</label><input id="sPhone" type="tel">
+        <label>Netfang</label><input id="sEmail" type="email">
+        <label>Markmið</label><input id="sGoal">
+        <label>Athugasemdir</label><textarea id="sNotes" rows="2"></textarea>
+        <button id="addStudentBtn">Vista nemanda</button>
+      </div>
+    </div>
+
+    <!-- Upplýsingar um nemanda -->
+    <div id="detailView" class="hidden">
+      <div class="card">
+        <h2 id="detailTitle"></h2>
+        <div id="studentInfo"></div>
+      </div>
+
+      <div class="card">
+        <h2>Bóka tíma</h2>
+        <label>Dagsetning</label><input id="lDate" type="date">
+        <label>Upphafstími</label><input id="lTime" type="time" value="10:00">
+        <label>Lengd (mínútur)</label><input id="lMins" type="number" value="60" min="15" step="15">
+        <label>Athugasemdir</label><input id="lNotes">
+        <button id="bookBtn">Bóka og setja í dagatal</button>
+      </div>
+
+      <div class="card">
+        <h2>Tímar</h2>
+        <div id="lessonList"></div>
+      </div>
+
+      <div class="card">
+        <h2>Greiðslur</h2>
+        <div id="paymentList"></div>
+        <hr style="border:0;border-top:1px solid #eef1ee;margin:12px 0">
+        <h2>Skrá greiðslu</h2>
+        <label>Upphæð (kr.)</label><input id="pAmount" type="number" min="0" step="500">
+        <label>Dagsetning</label><input id="pDate" type="date">
+        <label>Athugasemd</label><input id="pNotes">
+        <button id="addPaymentBtn">Vista greiðslu</button>
+      </div>
+    </div>
+
+    <div id="msg" class="status"></div>
+  </div>
+</main>
+
+<script>
+// ===== STILLINGAR: breyttu þessum þremur línum =====
+const CLIENT_ID = '1087644027595-27ct2jcfp9h7iphlsp017rf3lsm82m3p.apps.googleusercontent.com';
+const SHEET_ID = '1pY3x9z16uoMqH2lu-bc-VWRoCil77j3PpYuVFnCpYpw';
+const ALLOWED_EMAIL = 'skuliarnars12@gmail.com';
+// ====================================================
+
+const SCOPES = 'openid email https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/calendar.events';
+const TZ = 'Atlantic/Reykjavik';
+const STATUSES = ['Bokaður', 'Mættur', 'Aflýst'];
+
+let tokenClient = null;
+let accessToken = null;
+let students = [], lessons = [], payments = [];
+let currentStudent = null;
+
+const $ = id => document.getElementById(id);
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+function msg(text, isErr = false) {
+  const m = $('msg');
+  m.textContent = text;
+  m.className = 'status' + (isErr ? ' err' : '');
+}
+function todayISO() {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+// ----- Innskráning -----
+window.addEventListener('load', () => {
+  if (!window.google || !google.accounts) {
+    msg('Google innskráning hleðst ekki. Athugaðu nettenginguna.', true);
+    return;
+  }
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPES,
+    callback: onToken
+  });
+});
+
+$('loginBtn').onclick = () => {
+  if (!tokenClient) { msg('Innskráning er ekki tilbúin, reyndu aftur.', true); return; }
+  tokenClient.requestAccessToken({ prompt: 'select_account' });
+};
+
+async function onToken(resp) {
+  if (resp.error) { msg('Innskráning mistókst: ' + resp.error, true); return; }
+  accessToken = resp.access_token;
+  try {
+    const info = await api('https://www.googleapis.com/oauth2/v3/userinfo');
+    if (info.email !== ALLOWED_EMAIL) {
+      google.accounts.oauth2.revoke(accessToken, () => {});
+      accessToken = null;
+      msg('Þessi aðgangur hefur ekki heimild til að nota appið.', true);
+      return;
+    }
+    $('loginView').classList.add('hidden');
+    $('appView').classList.remove('hidden');
+    $('logoutBtn').classList.remove('hidden');
+    $('bookBtn').dataset.ready = '1';
+    $('lDate').value = todayISO();
+    $('pDate').value = todayISO();
+    await loadAll();
+  } catch (e) {
+    msg('Villa: ' + e.message, true);
+  }
+}
+
+$('logoutBtn').onclick = () => {
+  if (accessToken) google.accounts.oauth2.revoke(accessToken, () => {});
+  accessToken = null;
+  location.reload();
+};
+
+// ----- API hjálparföll -----
+async function api(url, opts = {}) {
+  const res = await fetch(url, {
+    ...opts,
+    headers: {
+      'Authorization': 'Bearer ' + accessToken,
+      'Content-Type': 'application/json',
+      ...(opts.headers || {})
+    }
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(res.status + ' ' + t.slice(0, 200));
+  }
+  return res.json();
+}
+
+const sheetUrl = range => `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(range)}`;
+
+async function getRows(range) {
+  const d = await api(sheetUrl(range));
+  return d.values || [];
+}
+async function appendRow(range, row) {
+  return api(sheetUrl(range) + ':append?valueInputOption=USER_ENTERED', {
+    method: 'POST',
+    body: JSON.stringify({ values: [row] })
+  });
+}
+async function setCell(range, value) {
+  return api(sheetUrl(range) + '?valueInputOption=USER_ENTERED', {
+    method: 'PUT',
+    body: JSON.stringify({ values: [[value]] })
+  });
+}
+
+// ----- Gögn -----
+async function loadAll() {
+  msg('Hleð gögnum...');
+  const [n, t, g] = await Promise.all([
+    getRows("'Nemendur'!A2:F"),
+    getRows("'Tímar'!A2:H"),
+    getRows("'Greiðslur'!A2:E")
+  ]);
+  students = n.map((r, i) => ({ row: i + 2, name: r[0] || '', phone: r[1] || '', email: r[2] || '', goal: r[3] || '', notes: r[4] || '' }))
+              .filter(s => s.name);
+  lessons = t.map((r, i) => ({ row: i + 2, name: r[0] || '', date: r[1] || '', time: r[2] || '', mins: r[3] || '',
+                               status: r[4] || '', paid: r[5] || 'nei', notes: r[6] || '', eventId: r[7] || '' }))
+             .filter(l => l.name);
+  payments = g.map((r, i) => ({ row: i + 2, name: r[0] || '', date: r[1] || '', amount: r[2] || '', notes: r[4] || '' }))
+              .filter(p => p.name);
+  if (currentStudent) currentStudent = students.find(s => s.name === currentStudent.name) || null;
+  msg('');
+  renderList();
+  if (currentStudent) renderDetail();
+}
+
+// ----- Skjáir -----
+function showList() {
+  currentStudent = null;
+  $('listView').classList.remove('hidden');
+  $('detailView').classList.add('hidden');
+  $('backBtn').classList.add('hidden');
+  $('title').textContent = 'Golfkennsla';
+  renderList();
+}
+function showDetail(name) {
+  currentStudent = students.find(s => s.name === name) || null;
+  if (!currentStudent) return;
+  $('listView').classList.add('hidden');
+  $('detailView').classList.remove('hidden');
+  $('backBtn').classList.remove('hidden');
+  $('title').textContent = currentStudent.name;
+  renderDetail();
+  window.scrollTo(0, 0);
+}
+$('backBtn').onclick = showList;
+
+function renderList() {
+  const el = $('studentList');
+  el.innerHTML = '';
+  if (!students.length) { el.innerHTML = '<p class="muted">Engir nemendur enn.</p>'; return; }
+  students.forEach(s => {
+    const unpaid = lessons.filter(l => l.name === s.name && l.paid.toLowerCase() !== 'já').length;
+    const div = document.createElement('div');
+    div.className = 'row';
+    div.style.cursor = 'pointer';
+    div.innerHTML = `<div><strong>${esc(s.name)}</strong><div class="muted">${esc(s.goal)}</div></div>` +
+                    (unpaid ? `<span class="badge">${unpaid} ógreitt</span>` : '');
+    div.onclick = () => showDetail(s.name);
+    el.appendChild(div);
+  });
+}
+
+function renderDetail() {
+  const s = currentStudent;
+  if (!s) return;
+  $('detailTitle').textContent = s.name;
+  $('studentInfo').innerHTML =
+    `<div class="muted">${esc(s.phone)} ${s.email ? '· ' + esc(s.email) : ''}</div>` +
+    (s.goal ? `<div>${esc(s.goal)}</div>` : '') +
+    (s.notes ? `<div class="muted">${esc(s.notes)}</div>` : '');
+
+  // Tímar
+  const myLessons = lessons.filter(l => l.name === s.name)
+    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  const lessonEl = $('lessonList');
+  lessonEl.innerHTML = '';
+  if (!myLessons.length) lessonEl.innerHTML = '<p class="muted">Engir tímar enn.</p>';
+  myLessons.forEach(l => {
+    const div = document.createElement('div');
+    div.className = 'row';
+    div.innerHTML = `<div>${esc(l.date)} kl. ${esc(l.time)} <span class="muted">(${esc(l.mins)} mín)</span>
+                       <div class="muted">${esc(l.status)}${l.notes ? ' · ' + esc(l.notes) : ''}</div></div>`;
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    actions.style.flex = '0 0 auto';
+    const statusBtn = document.createElement('button');
+    statusBtn.className = 'secondary';
+    statusBtn.textContent = 'Staða';
+    statusBtn.onclick = () => changeStatus(l);
+    const paidBtn = document.createElement('button');
+    paidBtn.className = 'secondary';
+    const isPaid = l.paid.toLowerCase() === 'já';
+    paidBtn.textContent = isPaid ? 'Greitt ✓' : 'Ógreitt';
+    paidBtn.onclick = () => togglePaid(l);
+    actions.append(statusBtn, paidBtn);
+    div.appendChild(actions);
+    lessonEl.appendChild(div);
+  });
+
+  // Greiðslur
+  const myPayments = payments.filter(p => p.name === s.name);
+  const payEl = $('paymentList');
+  payEl.innerHTML = '';
+  if (!myPayments.length) payEl.innerHTML = '<p class="muted">Engar greiðslur skráðar.</p>';
+  myPayments.forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'row';
+    div.innerHTML = `<div>${esc(p.date)} <span class="muted">${p.notes ? '· ' + esc(p.notes) : ''}</span></div>
+                     <strong>${esc(p.amount)} kr.</strong>`;
+    payEl.appendChild(div);
+  });
+}
+
+// ----- Aðgerðir -----
+async function addStudent() {
+  const name = $('sName').value.trim();
+  if (!name) { msg('Vantar nafn.', true); return; }
+  if (students.some(s => s.name === name)) { msg('Nemandi með þessu nafni er þegar til.', true); return; }
+  try {
+    msg('Vista...');
+    await appendRow("'Nemendur'!A:F", [name, $('sPhone').value.trim(), $('sEmail').value.trim(),
+                                        $('sGoal').value.trim(), $('sNotes').value.trim(), '']);
+    ['sName', 'sPhone', 'sEmail', 'sGoal', 'sNotes'].forEach(id => $(id).value = '');
+    await loadAll();
+    msg('Nemandi vistaður.');
+  } catch (e) { msg(e.message, true); }
+}
+$('addStudentBtn').onclick = addStudent;
+
+async function bookLesson() {
+  const date = $('lDate').value;
+  const time = $('lTime').value;
+  const mins = parseInt($('lMins').value || '60', 10);
+  const notes = $('lNotes').value.trim();
+  if (!date || !time) { msg('Veldu dagsetningu og tíma.', true); return; }
+  if (!currentStudent) return;
+
+  const [h, m] = time.split(':').map(Number);
+  const endTotal = h * 60 + m + mins;
+  const eh = String(Math.floor(endTotal / 60) % 24).padStart(2, '0');
+  const em = String(endTotal % 60).padStart(2, '0');
+  const startDT = `${date}T${time}:00`;
+  const endDT = `${date}T${eh}:${em}:00`;
+  const name = currentStudent.name;
+
+  try {
+    msg('Bóka tíma...');
+    const ev = await api('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+      method: 'POST',
+      body: JSON.stringify({
+        summary: `${name} - golfkennsla`,
+        description: notes,
+        start: { dateTime: startDT, timeZone: TZ },
+        end: { dateTime: endDT, timeZone: TZ }
+      })
+    });
+    await appendRow("'Tímar'!A:H", [name, date, time, mins, 'Bokaður', 'nei', notes, ev.id]);
+    $('lNotes').value = '';
+    await loadAll();
+    msg('Tími bókaður og settur í dagatalið.');
+  } catch (e) { msg(e.message, true); }
+}
+$('bookBtn').onclick = bookLesson;
+
+async function changeStatus(l) {
+  const next = STATUSES[(STATUSES.indexOf(l.status) + 1) % STATUSES.length];
+  try {
+    await setCell(`'Tímar'!E${l.row}`, next);
+    l.status = next;
+    renderDetail();
+    msg('Staða uppfærð.');
+  } catch (e) { msg(e.message, true); }
+}
+
+async function togglePaid(l) {
+  const next = l.paid.toLowerCase() === 'já' ? 'nei' : 'já';
+  try {
+    await setCell(`'Tímar'!F${l.row}`, next);
+    l.paid = next;
+    renderDetail();
+    renderList();
+    msg('Vistað.');
+  } catch (e) { msg(e.message, true); }
+}
+
+async function addPayment() {
+  const amount = $('pAmount').value;
+  const date = $('pDate').value || todayISO();
+  const notes = $('pNotes').value.trim();
+  if (!amount) { msg('Vantar upphæð.', true); return; }
+  if (!currentStudent) return;
+  try {
+    msg('Vista greiðslu...');
+    await appendRow("'Greiðslur'!A:E", [currentStudent.name, date, Number(amount), '', notes]);
+    $('pAmount').value = '';
+    $('pNotes').value = '';
+    await loadAll();
+    msg('Greiðsla vistuð.');
+  } catch (e) { msg(e.message, true); }
+}
+$('addPaymentBtn').onclick = addPayment;
+</script>
+</body>
+</html>
