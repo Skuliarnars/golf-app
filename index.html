@@ -511,6 +511,18 @@ function lessonPrice(l) {
 function paymentMarker(l) { return `Tími ${l.date} ${l.time}`; }
 function findLessonPayment(l) { return payments.find(p => p.name === l.name && p.notes === paymentMarker(l)); }
 
+// Staða nemanda: jákvæð tala = nemandinn skuldar, neikvæð = inneign hjá nemandanum.
+// Tímar sem eru ekki aflýstir (eða eru greiddir) eru rukkaðir, og allar greiðslur dregnar frá.
+function studentBalance(name) {
+  const charged = lessons
+    .filter(l => l.name === name && (l.status !== 'Aflýst' || l.paid.toLowerCase() === 'já'))
+    .reduce((sum, l) => sum + lessonPrice(l), 0);
+  const paid = payments
+    .filter(p => p.name === name)
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  return charged - paid;
+}
+
 // ----- Yfirlit -----
 function renderDash() {
   const today = todayISO();
@@ -519,8 +531,7 @@ function renderDash() {
   const upcoming = active.filter(l => l.date >= today)
     .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
   const next7 = upcoming.filter(l => l.date <= weekEnd).length;
-  const unpaidTotal = active.filter(l => l.paid.toLowerCase() !== 'já')
-    .reduce((sum, l) => sum + lessonPrice(l), 0);
+  const unpaidTotal = students.reduce((sum, s) => sum + Math.max(studentBalance(s.name), 0), 0);
   const monthPrefix = today.slice(0, 7);
   const paidMonth = payments
     .filter(p => String(p.date).startsWith(monthPrefix))
@@ -552,15 +563,17 @@ function renderList() {
   el.innerHTML = '';
   if (!students.length) { el.innerHTML = '<p class="muted">Engir nemendur enn.</p>'; return; }
   students.forEach(s => {
-    const owed = lessons
-      .filter(l => l.name === s.name && l.status !== 'Aflýst' && l.paid.toLowerCase() !== 'já')
-      .reduce((sum, l) => sum + lessonPrice(l), 0);
+    const balance = studentBalance(s.name);
     const div = document.createElement('div');
     div.className = 'row';
     div.style.cursor = 'pointer';
     const details = [s.phone, s.email, s.handicap ? 'Forgjöf ' + s.handicap : ''].filter(Boolean).map(esc).join(' · ');
     div.innerHTML = `<div><strong>${esc(s.name)}</strong><div class="muted">${details}</div></div>` +
-                    (owed ? `<span class="badge">Skuldar ${owed.toLocaleString('is-IS')} kr.</span>` : '');
+                    (balance > 0
+                      ? `<span class="badge">Skuldar ${balance.toLocaleString('is-IS')} kr.</span>`
+                      : balance < 0
+                        ? `<span class="badge ok">Inneign ${(-balance).toLocaleString('is-IS')} kr.</span>`
+                        : '');
     div.onclick = () => showDetail(s.name);
     el.appendChild(div);
   });
@@ -630,6 +643,13 @@ function renderDetail() {
     (s.handicap ? `<div>Forgjöf: ${esc(s.handicap)}</div>` : '') +
     (s.goal ? `<div>${esc(s.goal)}</div>` : '') +
     (s.notes ? `<div class="muted">${esc(s.notes)}</div>` : '');
+
+  const bal = studentBalance(s.name);
+  $('studentInfo').insertAdjacentHTML('beforeend', bal > 0
+    ? `<div><strong>Skuldar ${bal.toLocaleString('is-IS')} kr.</strong></div>`
+    : bal < 0
+      ? `<div><strong>Inneign ${(-bal).toLocaleString('is-IS')} kr.</strong></div>`
+      : '<div class="muted">Engin skuld</div>');
 
   // Tímar
   const myLessons = lessons.filter(l => l.name === s.name)
