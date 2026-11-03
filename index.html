@@ -119,7 +119,7 @@
     <div id="settingsView" class="hidden">
       <div class="card">
         <h2>Stillingar</h2>
-        <label>Verð á tíma (kr.)</label>
+        <label>Verð á klukkustund (kr.). 30 mínútna tími kostar helminginn.</label>
         <input id="priceInput" type="number" min="0" step="500">
         <button id="savePriceBtn">Vista verð</button>
       </div>
@@ -559,13 +559,14 @@ function renderDash() {
   const upcoming = active.filter(l => l.date >= today)
     .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
   const next7 = upcoming.filter(l => l.date <= weekEnd).length;
-  const unpaidCount = active.filter(l => l.paid.toLowerCase() !== 'já').length;
+  const unpaidTotal = active.filter(l => l.paid.toLowerCase() !== 'já')
+    .reduce((sum, l) => sum + lessonPrice(l), 0);
   const monthPrefix = today.slice(0, 7);
   const paidMonth = payments
     .filter(p => String(p.date).startsWith(monthPrefix))
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
-  $('dashUnpaid').textContent = (unpaidCount * LESSON_PRICE).toLocaleString('is-IS') + ' kr.';
+  $('dashUnpaid').textContent = unpaidTotal.toLocaleString('is-IS') + ' kr.';
   $('dashPaid').textContent = paidMonth.toLocaleString('is-IS') + ' kr.';
   $('dashCount').textContent = next7;
 
@@ -813,6 +814,11 @@ async function changeStatus(l) {
 }
 
 // Hver greidd tími fær færslu í Greiðslur með athugasemdinni "Tími <dagsetning> <tími>" svo hægt sé að finna hana aftur.
+// Verð tímans miðast við lengd: 60 mín = fullt verð, 30 mín = helmingur, o.s.frv.
+function lessonPrice(l) {
+  const mins = Number(l.mins) || 60;
+  return Math.round(LESSON_PRICE * mins / 60);
+}
 function paymentMarker(l) { return `Tími ${l.date} ${l.time}`; }
 function findLessonPayment(l) { return payments.find(p => p.name === l.name && p.notes === paymentMarker(l)); }
 
@@ -822,7 +828,7 @@ async function togglePaid(l) {
     msg('Vista...');
     if (becomingPaid) {
       await setCell(`'Tímar'!F${l.row}`, 'já');
-      await appendRow("'Greiðslur'!A:E", [l.name, todayISO(), LESSON_PRICE, '', paymentMarker(l)]);
+      await appendRow("'Greiðslur'!A:E", [l.name, todayISO(), lessonPrice(l), '', paymentMarker(l)]);
     } else {
       await setCell(`'Tímar'!F${l.row}`, 'nei');
       const p = findLessonPayment(l);
