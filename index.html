@@ -179,6 +179,17 @@
       </div>
     </div>
 
+    <!-- Athugasemd við tíma -->
+    <div id="lessonEditView" class="hidden">
+      <div class="card">
+        <h2 id="leTitle"></h2>
+        <div id="leInfo" class="muted" style="margin-bottom:12px"></div>
+        <label>Hvernig gekk tíminn?</label>
+        <textarea id="leNotes" rows="6"></textarea>
+        <button id="saveLessonNotesBtn">Vista athugasemd</button>
+      </div>
+    </div>
+
     <nav id="tabBar" class="tabbar hidden">
       <button id="tabDash">Yfirlit</button>
       <button id="tabStudents">Nemendur</button>
@@ -201,7 +212,9 @@ const ALLOWED_EMAIL = 'skuliarnars12@gmail.com';
 const SCOPES = 'openid email https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/calendar.events';
 const TZ = 'Atlantic/Reykjavik';
 const STATUSES = ['Bokaður', 'Mættur', 'Aflýst'];
-const VIEWS = ['dashView', 'listView', 'lessonsView', 'paymentsView', 'settingsView', 'detailView', 'addView'];
+const VIEWS = ['dashView', 'listView', 'lessonsView', 'paymentsView', 'settingsView', 'detailView', 'addView', 'lessonEditView'];
+let backTarget = () => goTab('students');
+let editingLessonRow = null;
 const TABS = {
   dash:     { view: 'dashView',     title: 'Yfirlit',   tab: 'tabDash' },
   students: { view: 'listView',     title: 'Nemendur',  tab: 'tabStudents' },
@@ -388,6 +401,7 @@ function showDetail(name) {
   const s = students.find(x => x.name === name);
   if (!s) return;
   currentStudent = s;
+  backTarget = () => goTab('students');
   VIEWS.forEach(v => $(v).classList.toggle('hidden', v !== 'detailView'));
   $('tabBar').classList.add('hidden');
   $('addNewBtn').classList.add('hidden');
@@ -405,13 +419,43 @@ function showAdd() {
   $('title').textContent = 'Nýr nemandi';
   msg('');
 }
-$('backBtn').onclick = () => goTab('students');
+$('backBtn').onclick = () => backTarget();
 $('tabDash').onclick = () => goTab('dash');
 $('tabStudents').onclick = () => goTab('students');
 $('tabLessons').onclick = () => goTab('lessons');
 $('tabPayments').onclick = () => goTab('payments');
 $('tabSettings').onclick = () => goTab('settings');
 $('addNewBtn').onclick = showAdd;
+
+// ----- Athugasemdir við tíma -----
+function showLessonEdit(row) {
+  const l = lessons.find(x => x.row === row);
+  if (!l) return;
+  editingLessonRow = row;
+  const fromName = currentStudent ? currentStudent.name : null;
+  backTarget = fromName ? () => showDetail(fromName) : () => goTab('lessons');
+  VIEWS.forEach(v => $(v).classList.toggle('hidden', v !== 'lessonEditView'));
+  $('tabBar').classList.add('hidden');
+  $('addNewBtn').classList.add('hidden');
+  $('backBtn').classList.remove('hidden');
+  $('title').textContent = 'Tími';
+  $('leTitle').textContent = l.name;
+  $('leInfo').textContent = `${l.date} kl. ${l.time} · ${l.mins} mín${l.location ? ' · ' + l.location : ''} · ${l.status}`;
+  $('leNotes').value = l.notes;
+  msg('');
+}
+async function saveLessonNotes() {
+  const l = lessons.find(x => x.row === editingLessonRow);
+  if (!l) return;
+  try {
+    msg('Vista athugasemd...');
+    await setCell(`'Tímar'!G${l.row}`, $('leNotes').value.trim());
+    await loadAll();
+    backTarget();
+    msg('Athugasemd vistuð.');
+  } catch (e) { msg(e.message, true); }
+}
+$('saveLessonNotesBtn').onclick = saveLessonNotes;
 
 // ----- Yfirlit -----
 function renderDash() {
@@ -501,6 +545,9 @@ function renderDetail() {
     delBtn.onclick = () => deleteLesson(l);
     actions.append(statusBtn, paidBtn, delBtn);
     div.appendChild(actions);
+    const info = div.firstElementChild;
+    info.style.cursor = 'pointer';
+    info.onclick = () => showLessonEdit(l.row);
     lessonEl.appendChild(div);
   });
 
@@ -543,7 +590,7 @@ function renderLessons() {
     div.innerHTML = `<div><strong>${esc(l.name)}</strong>
       <div class="muted">${esc(l.date)} kl. ${esc(l.time)}${l.location ? ' · ' + esc(l.location) : ''} · ${esc(l.status)}</div></div>
       <span class="badge ${paid ? 'ok' : ''}">${paid ? 'Greitt' : 'Ógreitt'}</span>`;
-    div.onclick = () => showDetail(l.name);
+    div.onclick = () => showLessonEdit(l.row);
     el.appendChild(div);
   });
 }
