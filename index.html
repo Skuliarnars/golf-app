@@ -176,7 +176,7 @@
         <label>Nafn</label><input id="sName" autocomplete="off">
         <label>Símanúmer</label><input id="sPhone" type="tel">
         <label>Netfang</label><input id="sEmail" type="email">
-        <label>Forgjöf</label><input id="sHandicap" type="number" step="0.1" inputmode="decimal">
+        <label>Forgjöf</label><input id="sHandicap" type="text" placeholder="t.d. +2,4 eða 14">
         <label>Markmið</label><input id="sGoal">
         <label>Athugasemdir</label><textarea id="sNotes" rows="2"></textarea>
         <button id="addStudentBtn">Vista nemanda</button>
@@ -190,7 +190,7 @@
         <div id="esName" class="muted" style="margin-bottom:10px"></div>
         <label>Símanúmer</label><input id="esPhone" type="tel">
         <label>Netfang</label><input id="esEmail" type="email">
-        <label>Forgjöf</label><input id="esHandicap" type="number" step="0.1" inputmode="decimal">
+        <label>Forgjöf</label><input id="esHandicap" type="text" placeholder="t.d. +2,4 eða 14">
         <label>Markmið</label><input id="esGoal">
         <label>Athugasemdir</label><textarea id="esNotes" rows="2"></textarea>
         <button id="saveStudentBtn">Vista breytingar</button>
@@ -267,6 +267,14 @@ function addDaysISO(iso, n) {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${d.getFullYear()}-${m}-${day}`;
+}
+
+// Forgjöf getur verið jákvæð (+2,4), neikvæð (-1) eða venjuleg (14). Plús er geymdur sem texti í töflunni.
+function cleanHandicap(raw) {
+  const v = String(raw || '').trim().replace(',', '.');
+  if (!v) return '';
+  if (!/^[+-]?\d+(\.\d+)?$/.test(v)) throw new Error('Forgjöf þarf að vera tala, t.d. +2,4 eða 14.');
+  return v.startsWith('+') ? "'" + v : v;
 }
 
 // ----- Innskráning -----
@@ -478,7 +486,7 @@ async function saveStudent() {
         $('esNotes').value.trim()
       ]] })
     });
-    await setCell(`'Nemendur'!G${s.row}`, $('esHandicap').value.trim());
+    await setCell(`'Nemendur'!G${s.row}`, cleanHandicap($('esHandicap').value));
     await loadAll();
     showDetail(s.name);
     msg('Upplýsingar vistaðar.');
@@ -684,7 +692,7 @@ async function addStudent() {
   try {
     msg('Vista...');
     await appendRow("'Nemendur'!A:G", [name, $('sPhone').value.trim(), $('sEmail').value.trim(),
-                                        $('sGoal').value.trim(), $('sNotes').value.trim(), '', $('sHandicap').value.trim()]);
+                                        $('sGoal').value.trim(), $('sNotes').value.trim(), '', cleanHandicap($('sHandicap').value)]);
     ['sName', 'sPhone', 'sEmail', 'sHandicap', 'sGoal', 'sNotes'].forEach(id => $(id).value = '');
     await loadAll();
     goTab('students');
