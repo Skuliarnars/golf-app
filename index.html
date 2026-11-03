@@ -28,7 +28,17 @@
   .badge { background: #fde9c8; color: #7a4a00; border-radius: 999px; padding: 2px 8px; font-size: 12px; white-space: nowrap; }
   h2 { font-size: 17px; margin: 4px 0 10px; }
   .hidden { display: none !important; }
-  .fab { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: 56px; height: 56px;
+  main { padding-bottom: 90px !important; }
+  .dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .big { font-size: 20px; font-weight: 600; margin: 2px 0 8px; }
+  .big.danger { color: #b00020; }
+  .big.success { color: #1f5c35; }
+  .badge.ok { background: #d6f0de; color: #1f5c35; }
+  .tabbar { position: fixed; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: 1fr 1fr; background: #fff;
+            border-top: 1px solid #dde3de; padding-bottom: env(safe-area-inset-bottom, 0px); z-index: 5; }
+  .tabbar button { background: transparent; color: #6b776e; border-radius: 0; padding: 12px 8px; font-size: 15px; }
+  .tabbar button.active { color: #1f5c35; font-weight: 600; }
+  .fab { position: fixed; right: 16px; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); width: 56px; height: 56px;
          border-radius: 50%; font-size: 30px; line-height: 1; padding: 0; display: flex; align-items: center; justify-content: center;
          box-shadow: 0 2px 8px rgba(0,0,0,.25); z-index: 6; }
   .status { min-height: 20px; font-size: 14px; margin: 8px 0; color: #1f5c35; }
@@ -56,7 +66,34 @@
 
   <!-- Listi yfir nemendur -->
   <div id="appView" class="hidden">
-    <div id="listView">
+    <div id="dashView">
+      <div class="dash-grid">
+        <div class="card">
+          <div class="muted">Greiðslur</div>
+          <div class="muted" style="margin-top:6px">Ógreitt</div>
+          <div id="dashUnpaid" class="big danger">0 kr.</div>
+          <div class="muted">Greitt í mánuðinum</div>
+          <div id="dashPaid" class="big success">0 kr.</div>
+        </div>
+        <div class="card">
+          <div class="muted">Næstu 7 dagar</div>
+          <div id="dashCount" class="big">0</div>
+          <div class="muted">tímar bókaðir</div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Tímar framundan</h2>
+        <div id="upcomingList"></div>
+      </div>
+      <div class="card">
+        <h2>Stillingar</h2>
+        <label>Verð á tíma (kr.)</label>
+        <input id="priceInput" type="number" min="0" step="500">
+        <button id="savePriceBtn">Vista verð</button>
+      </div>
+    </div>
+
+    <div id="listView" class="hidden">
       <div class="card">
         <h2>Nemendur</h2>
         <div id="studentList"></div>
@@ -87,6 +124,13 @@
         <label>Dagsetning</label><input id="lDate" type="date">
         <label>Upphafstími</label><input id="lTime" type="time" value="10:00">
         <label>Lengd (mínútur)</label><input id="lMins" type="number" value="60" min="15" step="15">
+        <label>Staðsetning</label>
+        <select id="lLocation" style="width:100%;padding:10px;font-size:16px;border:1px solid #c9d3cb;border-radius:8px;margin:4px 0 10px;">
+          <option value="GKG">GKG</option>
+          <option value="Kórinn">Kórinn</option>
+          <option value="Annað">Annað</option>
+        </select>
+        <input id="lLocationOther" class="hidden" placeholder="Skrifaðu staðsetninguna">
         <label>Athugasemdir</label><input id="lNotes">
         <button id="bookBtn">Bóka og setja í dagatal</button>
       </div>
@@ -108,7 +152,11 @@
       </div>
     </div>
 
-    <button id="addNewBtn" class="fab" aria-label="Nýr nemandi">+</button>
+    <nav id="tabBar" class="tabbar">
+      <button id="tabDash" class="active">Yfirlit</button>
+      <button id="tabStudents">Nemendur</button>
+    </nav>
+    <button id="addNewBtn" class="fab hidden" aria-label="Nýr nemandi">+</button>
     <div id="msg" class="status"></div>
   </div>
 </main>
@@ -122,6 +170,7 @@ const ALLOWED_EMAIL = 'skuliarnars12@gmail.com';
 
 const SCOPES = 'openid email https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/calendar.events';
 const TZ = 'Atlantic/Reykjavik';
+let LESSON_PRICE = 8000; // sótt úr flipanum Stillingar í töflunni
 const STATUSES = ['Bokaður', 'Mættur', 'Aflýst'];
 
 let tokenClient = null;
@@ -232,32 +281,111 @@ async function loadAll() {
   msg('Hleð gögnum...');
   const [n, t, g] = await Promise.all([
     getRows("'Nemendur'!A2:F"),
-    getRows("'Tímar'!A2:H"),
+    getRows("'Tímar'!A2:I"),
     getRows("'Greiðslur'!A2:E")
   ]);
   students = n.map((r, i) => ({ row: i + 2, name: r[0] || '', phone: r[1] || '', email: r[2] || '', goal: r[3] || '', notes: r[4] || '' }))
               .filter(s => s.name);
   lessons = t.map((r, i) => ({ row: i + 2, name: r[0] || '', date: r[1] || '', time: r[2] || '', mins: r[3] || '',
-                               status: r[4] || '', paid: r[5] || 'nei', notes: r[6] || '', eventId: r[7] || '' }))
+                               status: r[4] || '', paid: r[5] || 'nei', notes: r[6] || '', eventId: r[7] || '', location: r[8] || '' }))
              .filter(l => l.name);
   payments = g.map((r, i) => ({ row: i + 2, name: r[0] || '', date: r[1] || '', amount: r[2] || '', notes: r[4] || '' }))
               .filter(p => p.name);
+  const settings = await getRows("'Stillingar'!B1");
+  if (settings[0] && Number(settings[0][0]) > 0) LESSON_PRICE = Number(settings[0][0]);
+  $('priceInput').value = LESSON_PRICE;
   if (currentStudent) currentStudent = students.find(s => s.name === currentStudent.name) || null;
   msg('');
   renderList();
   if (currentStudent) renderDetail();
+  renderDash();
 }
 
 // ----- Skjáir -----
+function setTab(name) {
+  $('tabDash').classList.toggle('active', name === 'dash');
+  $('tabStudents').classList.toggle('active', name === 'students');
+}
+function showDash() {
+  currentStudent = null;
+  $('dashView').classList.remove('hidden');
+  $('listView').classList.add('hidden');
+  $('detailView').classList.add('hidden');
+  $('addView').classList.add('hidden');
+  $('addNewBtn').classList.add('hidden');
+  $('backBtn').classList.add('hidden');
+  $('tabBar').classList.remove('hidden');
+  setTab('dash');
+  $('title').textContent = 'Golfkennsla';
+  renderDash();
+}
 function showList() {
   currentStudent = null;
+  $('dashView').classList.add('hidden');
   $('listView').classList.remove('hidden');
   $('detailView').classList.add('hidden');
   $('addView').classList.add('hidden');
   $('addNewBtn').classList.remove('hidden');
   $('backBtn').classList.add('hidden');
+  $('tabBar').classList.remove('hidden');
+  setTab('students');
   $('title').textContent = 'Golfkennsla';
   renderList();
+}
+$('tabDash').onclick = showDash;
+$('tabStudents').onclick = showList;
+
+$('savePriceBtn').onclick = async () => {
+  const v = Number($('priceInput').value);
+  if (!v || v <= 0) { msg('Settu inn gilt verð.', true); return; }
+  try {
+    msg('Vista verð...');
+    await setCell("'Stillingar'!B1", v);
+    LESSON_PRICE = v;
+    renderDash();
+    msg('Verð vistað í töflunni.');
+  } catch (e) { msg(e.message, true); }
+};
+
+function addDaysISO(iso, n) {
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+function renderDash() {
+  const today = todayISO();
+  const weekEnd = addDaysISO(today, 7);
+  const active = lessons.filter(l => l.status !== 'Aflýst');
+  const upcoming = active.filter(l => l.date >= today)
+    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  const next7 = upcoming.filter(l => l.date <= weekEnd).length;
+  const unpaidCount = active.filter(l => l.paid.toLowerCase() !== 'já').length;
+  const monthPrefix = today.slice(0, 7);
+  const paidMonth = payments
+    .filter(p => String(p.date).startsWith(monthPrefix))
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
+  $('dashUnpaid').textContent = (unpaidCount * LESSON_PRICE).toLocaleString('is-IS') + ' kr.';
+  $('dashPaid').textContent = paidMonth.toLocaleString('is-IS') + ' kr.';
+  $('dashCount').textContent = next7;
+
+  const el = $('upcomingList');
+  el.innerHTML = '';
+  if (!upcoming.length) { el.innerHTML = '<p class="muted">Engir tímar framundan.</p>'; return; }
+  upcoming.slice(0, 10).forEach(l => {
+    const paid = l.paid.toLowerCase() === 'já';
+    const div = document.createElement('div');
+    div.className = 'row';
+    div.style.cursor = 'pointer';
+    div.innerHTML = `<div><strong>${esc(l.name)}</strong>
+      <div class="muted">${esc(l.date)} kl. ${esc(l.time)}${l.location ? ' · ' + esc(l.location) : ''}</div></div>
+      <span class="badge ${paid ? 'ok' : ''}">${paid ? 'Greitt' : 'Ógreitt'}</span>`;
+    div.onclick = () => showDetail(l.name);
+    el.appendChild(div);
+  });
 }
 function showAdd() {
   currentStudent = null;
@@ -266,6 +394,8 @@ function showAdd() {
   $('addView').classList.remove('hidden');
   $('addNewBtn').classList.add('hidden');
   $('backBtn').classList.remove('hidden');
+  $('dashView').classList.add('hidden');
+  $('tabBar').classList.add('hidden');
   $('title').textContent = 'Nýr nemandi';
   msg('');
 }
@@ -275,6 +405,8 @@ function showDetail(name) {
   if (!currentStudent) return;
   $('listView').classList.add('hidden');
   $('detailView').classList.remove('hidden');
+  $('dashView').classList.add('hidden');
+  $('tabBar').classList.add('hidden');
   $('addNewBtn').classList.add('hidden');
   $('backBtn').classList.remove('hidden');
   $('title').textContent = currentStudent.name;
@@ -318,7 +450,7 @@ function renderDetail() {
     const div = document.createElement('div');
     div.className = 'row';
     div.innerHTML = `<div>${esc(l.date)} kl. ${esc(l.time)} <span class="muted">(${esc(l.mins)} mín)</span>
-                       <div class="muted">${esc(l.status)}${l.notes ? ' · ' + esc(l.notes) : ''}</div></div>`;
+                       <div class="muted">${esc(l.status)}${l.location ? ' · ' + esc(l.location) : ''}${l.notes ? ' · ' + esc(l.notes) : ''}</div></div>`;
     const actions = document.createElement('div');
     actions.className = 'actions';
     actions.style.flex = '0 0 auto';
@@ -383,6 +515,11 @@ async function bookLesson() {
   const mins = parseInt($('lMins').value || '60', 10);
   const notes = $('lNotes').value.trim();
   if (!date || !time) { msg('Veldu dagsetningu og tíma.', true); return; }
+  let location = $('lLocation').value;
+  if (location === 'Annað') {
+    location = $('lLocationOther').value.trim();
+    if (!location) { msg('Skrifaðu staðsetninguna.', true); return; }
+  }
   if (!currentStudent) return;
 
   const [h, m] = time.split(':').map(Number);
@@ -400,19 +537,24 @@ async function bookLesson() {
       method: 'POST',
       body: JSON.stringify({
         summary: `${name} - golfkennsla`,
-        description: notes,
+        location: location,
+        description: [location, notes].filter(Boolean).join(' · '),
         start: { dateTime: startDT, timeZone: TZ },
         end: { dateTime: endDT, timeZone: TZ },
         attendees: studentEmail ? [{ email: studentEmail }] : []
       })
     });
-    await appendRow("'Tímar'!A:H", [name, date, time, mins, 'Bokaður', 'nei', notes, ev.id]);
+    await appendRow("'Tímar'!A:I", [name, date, time, mins, 'Bokaður', 'nei', notes, ev.id, location]);
     $('lNotes').value = '';
+    $('lLocationOther').value = '';
     await loadAll();
     msg('Tími bókaður og settur í dagatalið.');
   } catch (e) { msg(e.message, true); }
 }
 $('bookBtn').onclick = bookLesson;
+$('lLocation').onchange = () => {
+  $('lLocationOther').classList.toggle('hidden', $('lLocation').value !== 'Annað');
+};
 
 async function changeStatus(l) {
   const next = STATUSES[(STATUSES.indexOf(l.status) + 1) % STATUSES.length];
