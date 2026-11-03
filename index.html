@@ -31,6 +31,9 @@
   .hidden { display: none !important; }
   .status { min-height: 20px; font-size: 14px; margin: 8px 0; color: #1f5c35; }
   .status.err { color: #b00020; }
+  .toast { position: fixed; top: calc(64px + env(safe-area-inset-top, 0px)); left: 12px; right: 12px; background: #1f5c35;
+           color: #fff; padding: 10px 14px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.25); z-index: 10; font-size: 15px; }
+  .toast.err { background: #b00020; }
   .center { text-align: center; padding-top: 60px; }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; }
   .actions button { flex: 1; }
@@ -227,6 +230,7 @@
     </nav>
     <button id="addNewBtn" class="fab hidden" aria-label="Nýr nemandi">+</button>
     <div id="msg" class="status"></div>
+    <div id="toast" class="toast hidden"></div>
   </div>
 </main>
 
@@ -266,6 +270,11 @@ function msg(text, isErr = false) {
   const m = $('msg');
   m.textContent = text;
   m.className = 'status' + (isErr ? ' err' : '');
+  const t = $('toast');
+  t.textContent = text;
+  t.className = 'toast' + (isErr ? ' err' : '') + (text ? '' : ' hidden');
+  clearTimeout(window.toastTimer);
+  if (text) window.toastTimer = setTimeout(() => t.classList.add('hidden'), 5000);
 }
 function todayISO() {
   const d = new Date();
