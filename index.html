@@ -153,7 +153,7 @@ window.addEventListener('load', () => {
 
 $('loginBtn').onclick = () => {
   if (!tokenClient) { msg('Innskráning er ekki tilbúin, reyndu aftur.', true); return; }
-  tokenClient.requestAccessToken({ prompt: 'select_account' });
+  tokenClient.requestAccessToken({ hint: ALLOWED_EMAIL });
 };
 
 async function onToken(resp) {
