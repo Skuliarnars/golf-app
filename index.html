@@ -260,6 +260,7 @@ let students = [], lessons = [], payments = [];
 let currentStudent = null;
 let backTarget = () => goTab('students');
 let editingLessonRow = null;
+let nextTimeRow = 2; // fyrsta tóma lína í flipanum Tímar
 
 const $ = id => document.getElementById(id);
 
@@ -453,6 +454,7 @@ async function loadAll() {
              .filter(l => l.name);
   payments = g.map((r, i) => ({ row: i + 2, name: r[0] || '', date: r[1] || '', amount: r[2] || '', notes: r[4] || '' }))
               .filter(p => p.name);
+  nextTimeRow = t.length + 2;
   if (s[0] && Number(s[0][0]) > 0) LESSON_PRICE = Number(s[0][0]);
   $('priceInput').value = LESSON_PRICE;
   if (currentStudent) currentStudent = students.find(x => x.name === currentStudent.name) || null;
@@ -891,7 +893,7 @@ async function bookLesson() {
     });
     // Ein lína í Tímar fyrir hvern nemanda, allar með sama viðburðarauðkenni.
     const rows = chosen.map(s => [s.name, date, time, mins, 'Bokaður', 'nei', notes, ev.id, location, share]);
-    await appendRows("'Tímar'!A:J", rows);
+    await setRange(`'Tímar'!A${nextTimeRow}:J${nextTimeRow + rows.length - 1}`, rows);
     $('lNotes').value = '';
     $('lLocationOther').value = '';
     $('lPrice').value = '';
