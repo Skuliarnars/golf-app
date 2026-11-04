@@ -36,6 +36,11 @@
   .toast.err { background: #b00020; }
   .day-head { font-size: 15px; font-weight: 600; text-transform: capitalize; color: #1f5c35; margin: 14px 0 4px; }
   .day-head.past { color: #6b776e; }
+  .subnav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
+  .subnav button { background: #fff; color: #1f5c35; border: 1px solid #c9d3cb; padding: 10px 2px; font-size: 13px; border-radius: 10px; }
+  .subnav button.active { background: #1f5c35; color: #fff; border-color: #1f5c35; }
+  .dsec { display: none; }
+  .dsec.show { display: block; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #2e7d4f; margin-left: 6px; vertical-align: middle; }
   .center { text-align: center; padding-top: 60px; }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -159,7 +164,14 @@
         </div>
       </div>
 
-      <div class="card">
+      <div class="subnav" id="subnav">
+        <button data-sec="book">Bóka tíma</button>
+        <button data-sec="lessons">Tímar</button>
+        <button data-sec="pay">Greiðslur</button>
+        <button data-sec="video">Myndskeið</button>
+      </div>
+
+      <div class="card dsec" data-sec="book">
         <h2>Bóka tíma</h2>
         <label>Nemendur í tímanum</label>
         <div id="lStudents"></div>
@@ -208,13 +220,13 @@
         <button id="bookBtn">Bóka og setja í dagatal</button>
       </div>
 
-      <div class="card">
+      <div class="card dsec" data-sec="lessons">
         <h2>Tímar</h2>
         <button id="applyCreditBtn" class="secondary" style="margin-bottom:10px">Ráðstafa inneign á ógreidda tíma</button>
         <div id="lessonList"></div>
       </div>
 
-      <div class="card">
+      <div class="card dsec" data-sec="video">
         <h2>Myndskeið</h2>
         <div id="videoList"></div>
         <hr style="border:0;border-top:1px solid #eef1ee;margin:12px 0">
@@ -225,7 +237,7 @@
         <button id="uploadVideoBtn">Hlaða upp í Drive</button>
       </div>
 
-      <div class="card">
+      <div class="card dsec" data-sec="pay">
         <h2>Greiðslur</h2>
         <div id="paymentList"></div>
         <hr style="border:0;border-top:1px solid #eef1ee;margin:12px 0">
@@ -613,6 +625,7 @@ function showDetail(name) {
   renderBookStudents();
   renderVideoLessons();
   loadVideos();
+  showSec('lessons');
   window.scrollTo(0, 0);
 }
 function showAdd() {
@@ -625,6 +638,12 @@ function showAdd() {
   msg('');
 }
 $('backBtn').onclick = () => backTarget();
+// Hlutar á síðu nemanda: aðeins einn sýndur í einu
+function showSec(name) {
+  document.querySelectorAll('.dsec').forEach(el => el.classList.toggle('show', el.dataset.sec === name));
+  document.querySelectorAll('#subnav button').forEach(b => b.classList.toggle('active', b.dataset.sec === name));
+}
+document.querySelectorAll('#subnav button').forEach(b => { b.onclick = () => showSec(b.dataset.sec); });
 $('tabDash').onclick = () => goTab('dash');
 $('tabStudents').onclick = () => goTab('students');
 $('tabLessons').onclick = () => goTab('lessons');
@@ -786,6 +805,7 @@ function renderDetail() {
   const s = currentStudent;
   if (!s) return;
   $('detailTitle').textContent = s.name;
+  renderVideoLessons();
   $('studentInfo').innerHTML =
     `<div class="muted">${esc(s.phone)} ${s.email ? '· ' + esc(s.email) : ''}</div>` +
     (s.handicap ? `<div>Forgjöf: ${esc(s.handicap)}</div>` : '') +
@@ -1027,15 +1047,22 @@ async function loadVideos() {
 function renderVideoLessons() {
   const sel = $('vLesson');
   sel.innerHTML = '';
-  if (!currentStudent) return;
-  lessons.filter(l => l.name === currentStudent.name)
-    .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time))
-    .forEach(l => {
-      const o = document.createElement('option');
-      o.value = l.row;
-      o.textContent = `${l.date} kl. ${l.time}`;
-      sel.appendChild(o);
-    });
+  const mine = currentStudent
+    ? lessons.filter(l => l.name === currentStudent.name).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time))
+    : [];
+  if (!mine.length) {
+    const o = document.createElement('option');
+    o.value = '';
+    o.textContent = 'Enginn tími skráður';
+    sel.appendChild(o);
+    return;
+  }
+  mine.forEach(l => {
+    const o = document.createElement('option');
+    o.value = l.row;
+    o.textContent = `${l.date} kl. ${l.time}`;
+    sel.appendChild(o);
+  });
 }
 
 async function uploadVideo() {
