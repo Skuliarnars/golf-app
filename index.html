@@ -101,6 +101,15 @@
       </div>
     </div>
 
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <button id="weekPrev" class="secondary">←</button>
+        <h2 id="weekTitle" style="margin:0"></h2>
+        <button id="weekNext" class="secondary">→</button>
+      </div>
+      <div id="weekList"></div>
+    </div>
+
     <!-- Nemendur -->
     <div id="listView" class="hidden">
       <div class="card">
@@ -167,6 +176,34 @@
         </select>
         <input id="lLocationOther" class="hidden" placeholder="Skrifaðu staðsetninguna">
         <label>Athugasemdir</label><input id="lNotes">
+        <label style="display:flex;gap:8px;align-items:center;margin:6px 0">
+          <input id="lRepeat" type="checkbox" style="width:auto;margin:0"> Endurtaka vikulega
+        </label>
+        <select id="lInterval" class="hidden">
+          <option value="week">Vikulega</option>
+          <option value="two">Annanhverja viku</option>
+          <option value="month">Mánaðarlega</option>
+          <option value="nth">Ákveðinn vikudagur í mánuði</option>
+        </select>
+        <div id="nthRow" class="hidden" style="display:flex;gap:8px;margin-bottom:10px">
+          <select id="lNth" style="flex:1">
+            <option value="1">fyrsti</option>
+            <option value="2">annar</option>
+            <option value="3">þriðji</option>
+            <option value="4">fjórði</option>
+            <option value="last">síðasti</option>
+          </select>
+          <select id="lWeekday" style="flex:2">
+            <option value="1">mánudagur</option>
+            <option value="2" selected>þriðjudagur</option>
+            <option value="3">miðvikudagur</option>
+            <option value="4">fimmtudagur</option>
+            <option value="5">föstudagur</option>
+            <option value="6">laugardagur</option>
+            <option value="0">sunnudagur</option>
+          </select>
+        </div>
+        <input id="lWeeks" type="number" min="2" max="26" value="8" class="hidden" placeholder="Fjöldi tíma">
         <button id="bookBtn">Bóka og setja í dagatal</button>
       </div>
 
@@ -324,6 +361,28 @@ function msg(text, isErr = false) {
 function todayISO() {
   const d = new Date();
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+// Bætir mánuðum við dagsetningu. Ef dagurinn er ekki til í mánuðinum (t.d. 31.) er síðasti dagur mánaðarins notaður.
+function addMonthsISO(iso, n) {
+  const [y, mo, day] = iso.split('-').map(Number);
+  const total = mo - 1 + n;
+  const ny = y + Math.floor(total / 12);
+  const nm = ((total % 12) + 12) % 12;
+  const lastDay = new Date(ny, nm + 1, 0).getDate();
+  const nd = Math.min(day, lastDay);
+  return `${ny}-${String(nm + 1).padStart(2, '0')}-${String(nd).padStart(2, '0')}`;
+}
+// Dagsetning n-ta vikudagsins í mánuði (m: 0-11, weekday: 0=sunnudagur..6=laugardagur, nth: 1-4 eða 'last')
+function nthWeekdayOfMonth(y, m, weekday, nth) {
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  if (nth === 'last') {
+    const last = new Date(y, m + 1, 0);
+    last.setDate(last.getDate() - ((last.getDay() - weekday + 7) % 7));
+    return fmt(last);
+  }
+  const first = new Date(y, m, 1);
+  const off = (weekday - first.getDay() + 7) % 7;
+  return fmt(new Date(y, m, 1 + off + 7 * (Number(nth) - 1)));
 }
 function addDaysISO(iso, n) {
   const d = new Date(iso + 'T00:00:00');
@@ -596,6 +655,7 @@ function studentBalance(name) {
 
 // ----- Yfirlit -----
 function renderDash() {
+  renderWeek();
   const today = todayISO();
   const weekEnd = addDaysISO(today, 7);
   const active = lessons.filter(l => l.status !== 'Aflýst');
@@ -953,48 +1013,126 @@ async function bookLesson() {
   if (!names.length) { msg('Veldu að minnsta kosti einn nemanda.', true); return; }
   const chosen = names.map(n => students.find(s => s.name === n)).filter(Boolean);
 
-  // Verð tímans: það sem er skráð í reitinn, annars sjálfgefið verð fyrir lengdina. Deilist jafnt á nemendur.
   const priceRaw = $('lPrice').value.trim();
   const total = priceRaw !== '' ? Number(priceRaw) : Math.round(LESSON_PRICE * (mins || 60) / 60);
   if (isNaN(total) || total < 0) { msg('Verðið er ekki gilt.', true); return; }
   const share = Math.round(total / chosen.length);
 
+  const repeating = $('lRepeat').checked;
+  const interval = repeating ? $('lInterval').value : 'once';
+  const weeks = repeating ? Math.min(26, Math.max(2, parseInt($('lWeeks').value || '2', 10))) : 1;
+
+  let dates;
+  if (interval === 'nth') {
+    const [sy, sm] = date.split('-').map(Number);
+    const weekday = Number($('lWeekday').value);
+    const nth = $('lNth').value;
+    dates = [];
+    for (let k = 0; dates.length < weeks && k < 60; k++) {
+      const total = sm - 1 + k;
+      const d = nthWeekdayOfMonth(sy + Math.floor(total / 12), total % 12, weekday, nth);
+      if (d >= date) dates.push(d);
+    }
+  } else if (interval === 'month') {
+    dates = [...Array(weeks)].map((_, w) => addMonthsISO(date, w));
+  } else if (interval === 'week' || interval === 'two') {
+    dates = [...Array(weeks)].map((_, w) => addDaysISO(date, (interval === 'two' ? 14 : 7) * w));
+  } else {
+    dates = [date];
+  }
+
+  const attendees = chosen.map(s => (s.email || '').trim()).filter(Boolean).map(email => ({ email }));
   const [h, m] = time.split(':').map(Number);
   const endTotal = h * 60 + m + mins;
   const eh = String(Math.floor(endTotal / 60) % 24).padStart(2, '0');
   const em = String(endTotal % 60).padStart(2, '0');
-  const startDT = `${date}T${time}:00`;
-  const endDT = `${date}T${eh}:${em}:00`;
-  const attendees = chosen.map(s => (s.email || '').trim()).filter(Boolean).map(email => ({ email }));
+  const summary = `${names.join(' & ')} - golfkennsla`;
 
   try {
-    msg('Bóka tíma...');
-    const ev = await api(`https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=${attendees.length ? 'all' : 'none'}`, {
-      method: 'POST',
-      body: JSON.stringify({
-        summary: `${names.join(' & ')} - golfkennsla`,
-        location: location,
-        description: [location, notes].filter(Boolean).join(' · '),
-        start: { dateTime: startDT, timeZone: TZ },
-        end: { dateTime: endDT, timeZone: TZ },
-        attendees: attendees
-      })
-    });
-    // Ein lína í Tímar fyrir hvern nemanda, allar með sama viðburðarauðkenni.
-    const bookedAt = new Date().toISOString();
-    // Dálkur K (Áminning send) er tómur hér, bókunartíminn fer í L.
-    const rows = chosen.map(s => [s.name, date, time, mins, 'Bokaður', 'nei', notes, ev.id, location, share, '', bookedAt]);
+    const rows = [];
+    for (let w = 0; w < dates.length; w++) {
+      msg(dates.length > 1 ? `Bóka tíma ${w + 1} af ${dates.length}...` : 'Bóka tíma...');
+      const d = dates[w];
+      // Hver vika fær sinn viðburð í dagatalinu, svo hægt sé að breyta eða eyða einni viku í einu.
+      const ev = await api(`https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=${attendees.length ? 'all' : 'none'}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          summary: summary,
+          location: location,
+          description: [location, notes].filter(Boolean).join(' · '),
+          start: { dateTime: `${d}T${time}:00`, timeZone: TZ },
+          end: { dateTime: `${d}T${eh}:${em}:00`, timeZone: TZ },
+          attendees: attendees
+        })
+      });
+      const bookedAt = new Date().toISOString();
+      chosen.forEach(s => rows.push([s.name, d, time, mins, 'Bokaður', 'nei', notes, ev.id, location, share, '', bookedAt]));
+    }
     await setRange(`'Tímar'!A${nextTimeRow}:L${nextTimeRow + rows.length - 1}`, rows);
     $('lNotes').value = '';
     $('lLocationOther').value = '';
     $('lPrice').value = '';
     await loadAll();
-    msg(chosen.length > 1
-      ? `Tími bókaður fyrir ${chosen.length} nemendur, ${share.toLocaleString('is-IS')} kr. hver.`
-      : 'Tími bókaður og settur í dagatalið.');
+    msg(dates.length > 1
+      ? `${dates.length} tímar bókaðir.`
+      : chosen.length > 1
+        ? `Tími bókaður fyrir ${chosen.length} nemendur, ${share.toLocaleString('is-IS')} kr. hver.`
+        : 'Tími bókaður og settur í dagatalið.');
   } catch (e) { msg(e.message, true); }
 }
 $('bookBtn').onclick = bookLesson;
+function syncRepeatUI() {
+  const on = $('lRepeat').checked;
+  const nth = on && $('lInterval').value === 'nth';
+  $('lWeeks').classList.toggle('hidden', !on);
+  $('lInterval').classList.toggle('hidden', !on);
+  $('nthRow').classList.toggle('hidden', !nth);
+}
+$('lRepeat').onchange = syncRepeatUI;
+$('lInterval').onchange = syncRepeatUI;
+
+// Vikuyfirlit: mánudagur til sunnudags, með tímum hvers dags
+let weekOffset = 0;
+function shortDate(iso) {
+  const d = new Date(iso + 'T00:00:00');
+  return `${d.getDate()}. ${MONTHS[d.getMonth()]}`;
+}
+function renderWeek() {
+  const today = todayISO();
+  const dow = (new Date(today + 'T00:00:00').getDay() + 6) % 7;
+  const monday = addDaysISO(today, -dow + 7 * weekOffset);
+  const days = [...Array(7)].map((_, i) => addDaysISO(monday, i));
+  $('weekTitle').textContent = `${shortDate(monday)} – ${shortDate(days[6])}`;
+  const el = $('weekList');
+  el.innerHTML = '';
+  days.forEach(day => {
+    const dayLessons = lessons.filter(l => l.date === day && l.status !== 'Aflýst')
+      .sort((a, b) => a.time.localeCompare(b.time));
+    const head = document.createElement('div');
+    head.className = 'day-head' + (day === today ? '' : (day < today ? ' past' : ''));
+    head.textContent = dayLabel(day);
+    el.appendChild(head);
+    if (!dayLessons.length) {
+      const none = document.createElement('div');
+      none.className = 'muted';
+      none.style.padding = '4px 0 8px';
+      none.textContent = 'Engir tímar';
+      el.appendChild(none);
+      return;
+    }
+    dayLessons.forEach(l => {
+      const div = document.createElement('div');
+      div.className = 'row';
+      div.style.cursor = 'pointer';
+      div.innerHTML = `<div><strong>${esc(l.time)}</strong> ${esc(l.name)}${acceptDot(l)}
+        <div class="muted">${l.location ? esc(l.location) : ''}</div></div>`;
+      div.onclick = () => showLessonEdit(l.row);
+      el.appendChild(div);
+    });
+  });
+}
+$('weekPrev').onclick = () => { weekOffset--; renderWeek(); };
+$('weekNext').onclick = () => { weekOffset++; renderWeek(); };
 
 async function changeStatus(l) {
   const next = STATUSES[(STATUSES.indexOf(l.status) + 1) % STATUSES.length];
