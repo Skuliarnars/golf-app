@@ -34,6 +34,7 @@
   .toast { position: fixed; top: calc(64px + env(safe-area-inset-top, 0px)); left: 12px; right: 12px; background: #1f5c35;
            color: #fff; padding: 10px 14px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.25); z-index: 10; font-size: 15px; }
   .toast.err { background: #b00020; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #2e7d4f; margin-left: 6px; vertical-align: middle; }
   .center { text-align: center; padding-top: 60px; }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; }
   .actions button { flex: 1; }
@@ -218,9 +219,26 @@
       <div class="card">
         <h2 id="leTitle"></h2>
         <div id="leInfo" class="muted" style="margin-bottom:12px"></div>
+        <label>Dagsetning</label><input id="leDate" type="date">
+        <label>Upphafstími</label><input id="leTime" type="time">
+        <label>Lengd (mínútur)</label><input id="leMins" type="number" min="15" step="15">
+        <label>Verð tímans (kr.). Autt = sjálfgefið verð.</label><input id="lePrice" type="number" min="0" step="500">
+        <label>Staðsetning</label>
+        <select id="leLocation">
+          <option value="GKG">GKG</option>
+          <option value="Kórinn">Kórinn</option>
+          <option value="Annað">Annað</option>
+        </select>
+        <input id="leLocationOther" class="hidden" placeholder="Skrifaðu staðsetninguna">
+        <label>Staða</label>
+        <select id="leStatus">
+          <option value="Bokaður">Bokaður</option>
+          <option value="Mættur">Mættur</option>
+          <option value="Aflýst">Aflýst</option>
+        </select>
         <label>Hvernig gekk tíminn?</label>
         <textarea id="leNotes" rows="6"></textarea>
-        <button id="saveLessonNotesBtn">Vista athugasemd</button>
+        <button id="saveLessonNotesBtn">Vista breytingar</button>
       </div>
     </div>
 
@@ -279,6 +297,7 @@ let currentStudent = null;
 let backTarget = () => goTab('students');
 let editingLessonRow = null;
 let nextTimeRow = 2; // fyrsta tóma lína í flipanum Tímar
+let eventStatus = {}; // viðburðarauðkenni -> { netfang: svarstaða }
 
 const $ = id => document.getElementById(id);
 
@@ -473,6 +492,7 @@ async function loadAll() {
   payments = g.map((r, i) => ({ row: i + 2, name: r[0] || '', date: r[1] || '', amount: r[2] || '', notes: r[4] || '' }))
               .filter(p => p.name);
   nextTimeRow = t.length + 2;
+  await loadEventStatus();
   if (s[0] && Number(s[0][0]) > 0) LESSON_PRICE = Number(s[0][0]);
   $('priceInput').value = LESSON_PRICE;
   if (currentStudent) currentStudent = students.find(x => x.name === currentStudent.name) || null;
@@ -579,7 +599,7 @@ function renderDash() {
     div.className = 'row';
     div.style.cursor = 'pointer';
     div.innerHTML = `<div><strong>${esc(l.name)}</strong>
-      <div class="muted">${esc(l.date)} kl. ${esc(l.time)}${l.location ? ' · ' + esc(l.location) : ''}</div></div>
+      <div class="muted">${esc(l.date)} kl. ${esc(l.time)}${acceptDot(l)}${l.location ? ' · ' + esc(l.location) : ''}</div></div>
       <span class="badge ${paid ? 'ok' : ''}">${paid ? 'Greitt' : 'Ógreitt'}</span>`;
     div.onclick = () => showLessonEdit(l.row);
     el.appendChild(div);
@@ -690,7 +710,7 @@ function renderDetail() {
     const div = document.createElement('div');
     div.className = 'row';
     const others = lessons.filter(x => x.eventId === l.eventId && x.row !== l.row && x.eventId).map(x => x.name);
-    div.innerHTML = `<div>${esc(l.date)} kl. ${esc(l.time)} <span class="muted">(${esc(l.mins)} mín)</span>
+    div.innerHTML = `<div>${esc(l.date)} kl. ${esc(l.time)}${acceptDot(l)} <span class="muted">(${esc(l.mins)} mín)</span>
                        <div class="muted">${esc(l.status)} · ${lessonPrice(l).toLocaleString('is-IS')} kr.${l.location ? ' · ' + esc(l.location) : ''}${others.length ? ' · með ' + esc(others.join(', ')) : ''}${l.notes ? ' · ' + esc(l.notes) : ''}</div></div>`;
     const actions = document.createElement('div');
     actions.className = 'actions';
@@ -752,7 +772,7 @@ function renderLessons() {
     div.className = 'row';
     div.style.cursor = 'pointer';
     div.innerHTML = `<div><strong>${esc(l.name)}</strong>
-      <div class="muted">${esc(l.date)} kl. ${esc(l.time)}${l.location ? ' · ' + esc(l.location) : ''} · ${esc(l.status)}</div></div>
+      <div class="muted">${esc(l.date)} kl. ${esc(l.time)}${acceptDot(l)}${l.location ? ' · ' + esc(l.location) : ''} · ${esc(l.status)}</div></div>
       <span class="badge ${paid ? 'ok' : ''}">${paid ? 'Greitt' : 'Ógreitt'}</span>`;
     div.onclick = () => showLessonEdit(l.row);
     el.appendChild(div);
@@ -998,6 +1018,81 @@ async function applyCredit() {
 }
 $('applyCreditBtn').onclick = applyCredit;
 
+// ----- Samþykki í dagatali og breyting á tíma -----
+// Sækir svör gesta fyrir komandi tíma. Grænn punktur birtist ef nemandinn hefur samþykkt viðburðinn.
+async function loadEventStatus() {
+  eventStatus = {};
+  const today = todayISO();
+  const ids = [...new Set(lessons.filter(l => l.eventId && l.date >= today).map(l => l.eventId))];
+  await Promise.all(ids.map(async id => {
+    try {
+      const ev = await api(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(id)}`);
+      const map = {};
+      (ev.attendees || []).forEach(a => { map[(a.email || '').toLowerCase()] = a.responseStatus; });
+      eventStatus[id] = map;
+    } catch (e) { /* viðburður finnst ekki */ }
+  }));
+}
+function isAccepted(l) {
+  const s = students.find(x => x.name === l.name);
+  const map = eventStatus[l.eventId];
+  return !!(s && map && map[(s.email || '').toLowerCase()] === 'accepted');
+}
+function acceptDot(l) {
+  return isAccepted(l) ? '<span class="dot" title="Samþykkt í dagatali"></span>' : '';
+}
+
+// Breytir öllu við tímann. Ef fleiri nemendur eru á sama viðburði, breytast dagsetning, tími, lengd og staðsetning hjá þeim líka.
+async function saveLessonEdit() {
+  const l = lessons.find(x => x.row === editingLessonRow);
+  if (!l) return;
+  const date = $('leDate').value;
+  const time = $('leTime').value;
+  const mins = parseInt($('leMins').value || '60', 10);
+  const status = $('leStatus').value;
+  const notes = $('leNotes').value.trim();
+  const priceRaw = $('lePrice').value.trim();
+  if (!date || !time) { msg('Vantar dagsetningu eða tíma.', true); return; }
+  let location = $('leLocation').value;
+  if (location === 'Annað') {
+    location = $('leLocationOther').value.trim();
+    if (!location) { msg('Skrifaðu staðsetninguna.', true); return; }
+  }
+  const sharing = lessons.filter(x => l.eventId && x.eventId === l.eventId && x.row !== l.row);
+  try {
+    msg('Vista...');
+    if (l.eventId) {
+      const [h, m] = time.split(':').map(Number);
+      const endTotal = h * 60 + m + mins;
+      const eh = String(Math.floor(endTotal / 60) % 24).padStart(2, '0');
+      const em = String(endTotal % 60).padStart(2, '0');
+      const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(l.eventId)}?sendUpdates=all`, {
+        method: 'PATCH',
+        headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          location: location,
+          description: [location, notes].filter(Boolean).join(' · '),
+          start: { dateTime: `${date}T${time}:00`, timeZone: TZ },
+          end: { dateTime: `${date}T${eh}:${em}:00`, timeZone: TZ }
+        })
+      });
+      if (!res.ok && res.status !== 404) throw new Error('Dagatal: ' + res.status);
+    }
+    await setRange(`'Tímar'!A${l.row}:J${l.row}`, [[l.name, date, time, mins, status, l.paid, notes, l.eventId, location, priceRaw]]);
+    for (const o of sharing) {
+      await setRange(`'Tímar'!B${o.row}:D${o.row}`, [[date, time, mins]]);
+      await setCell(`'Tímar'!I${o.row}`, location);
+    }
+    await loadAll();
+    backTarget();
+    msg('Tíma breytt.');
+  } catch (e) { msg(e.message, true); }
+}
+
+function toggleLeOther() {
+  $('leLocationOther').classList.toggle('hidden', $('leLocation').value !== 'Annað');
+}
+
 // ----- Athugasemdir við tíma -----
 function showLessonEdit(row) {
   const l = lessons.find(x => x.row === row);
@@ -1012,6 +1107,19 @@ function showLessonEdit(row) {
   $('title').textContent = 'Tími';
   $('leTitle').textContent = l.name;
   $('leInfo').textContent = `${l.date} kl. ${l.time} · ${l.mins} mín${l.location ? ' · ' + l.location : ''} · ${l.status}`;
+  $('leDate').value = l.date;
+  $('leTime').value = l.time;
+  $('leMins').value = l.mins;
+  $('lePrice').value = l.price || '';
+  $('leStatus').value = l.status;
+  if (l.location === 'GKG' || l.location === 'Kórinn') {
+    $('leLocation').value = l.location;
+    $('leLocationOther').value = '';
+  } else {
+    $('leLocation').value = 'Annað';
+    $('leLocationOther').value = l.location;
+  }
+  toggleLeOther();
   $('leNotes').value = l.notes;
   msg('');
 }
@@ -1026,7 +1134,8 @@ async function saveLessonNotes() {
     msg('Athugasemd vistuð.');
   } catch (e) { msg(e.message, true); }
 }
-$('saveLessonNotesBtn').onclick = saveLessonNotes;
+$('saveLessonNotesBtn').onclick = saveLessonEdit;
+$('leLocation').onchange = toggleLeOther;
 
 // ----- Greiðslur: skrá og eyða -----
 async function addPayment() {
