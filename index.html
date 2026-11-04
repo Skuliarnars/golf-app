@@ -568,7 +568,19 @@ function paymentMarker(l) { return `Tími ${l.date} ${l.time}`; }
 function findLessonPayment(l) { return payments.find(p => p.name === l.name && p.notes === paymentMarker(l)); }
 // Ráðstöfun inneignar á tíma er skráð sem færsla með 0 kr. og athugasemd um tímann, svo sjáist á greiðslum nemandans.
 function creditNote(l, amount) { return `Inneign ${amount.toLocaleString('is-IS')} kr. á ${paymentMarker(l)}`; }
-function findCreditUse(l) { return payments.find(p => p.name === l.name && p.method === 'Inneign' && p.notes.endsWith(paymentMarker(l))); }
+function findCreditUses(l) { return payments.filter(p => p.name === l.name && p.method === 'Inneign' && p.notes.endsWith(paymentMarker(l))); }
+// Samtals greitt á tíma, bæði með greiðslu og inneign
+function lessonPaidAmount(l) {
+  return payments
+    .filter(p => p.name === l.name && p.notes && p.notes.endsWith(paymentMarker(l)))
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+}
+function partialText(l) {
+  const price = lessonPrice(l);
+  const paid = lessonPaidAmount(l);
+  if (l.paid.toLowerCase() === 'já' || paid <= 0) return `${price.toLocaleString('is-IS')} kr.`;
+  return `${paid.toLocaleString('is-IS')} af ${price.toLocaleString('is-IS')} kr. greitt`;
+}
 
 // Staða nemanda: jákvæð tala = nemandinn skuldar, neikvæð = inneign hjá nemandanum.
 // Tímar sem eru ekki aflýstir (eða eru greiddir) eru rukkaðir, og allar greiðslur dregnar frá.
@@ -577,7 +589,7 @@ function studentBalance(name) {
     .filter(l => l.name === name && (l.status !== 'Aflýst' || l.paid.toLowerCase() === 'já'))
     .reduce((sum, l) => sum + lessonPrice(l), 0);
   const paid = payments
-    .filter(p => p.name === name)
+    .filter(p => p.name === name && p.method !== 'Inneign')
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
   return charged - paid;
 }
@@ -593,7 +605,7 @@ function renderDash() {
   const unpaidTotal = students.reduce((sum, s) => sum + Math.max(studentBalance(s.name), 0), 0);
   const monthPrefix = today.slice(0, 7);
   const paidMonth = payments
-    .filter(p => String(p.date).startsWith(monthPrefix))
+    .filter(p => String(p.date).startsWith(monthPrefix) && p.method !== 'Inneign')
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
   $('dashUnpaid').textContent = unpaidTotal.toLocaleString('is-IS') + ' kr.';
@@ -721,7 +733,7 @@ function renderDetail() {
     div.className = 'row';
     const others = lessons.filter(x => x.eventId === l.eventId && x.row !== l.row && x.eventId).map(x => x.name);
     div.innerHTML = `<div>${esc(l.date)} kl. ${esc(l.time)}${acceptDot(l)} <span class="muted">(${esc(l.mins)} mín)</span>
-                       <div class="muted">${esc(l.status)} · ${lessonPrice(l).toLocaleString('is-IS')} kr.${l.location ? ' · ' + esc(l.location) : ''}${others.length ? ' · með ' + esc(others.join(', ')) : ''}${l.notes ? ' · ' + esc(l.notes) : ''}</div></div>`;
+                       <div class="muted">${esc(l.status)} · ${partialText(l)}${l.location ? ' · ' + esc(l.location) : ''}${others.length ? ' · með ' + esc(others.join(', ')) : ''}${l.notes ? ' · ' + esc(l.notes) : ''}</div></div>`;
     const actions = document.createElement('div');
     actions.className = 'actions';
     actions.style.flex = '0 0 auto';
@@ -819,7 +831,7 @@ function renderLessons() {
 
 // ----- Greiðslur (allar) -----
 function renderPayments() {
-  const total = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  const total = payments.filter(p => p.method !== 'Inneign').reduce((sum, p) => sum + Number(p.amount || 0), 0);
   $('paymentsTotal').textContent = total.toLocaleString('is-IS') + ' kr.';
   const el = $('allPaymentsList');
   el.innerHTML = '';
@@ -1010,10 +1022,10 @@ async function togglePaid(l) {
       await setCell(`'Tímar'!F${l.row}`, 'já');
       if (toPay > 0) await appendRow("'Greiðslur'!A:F", [l.name, todayISO(), toPay, '', paymentMarker(l), method]);
       const used = Math.min(credit, lessonPrice(l));
-      if (used > 0) await appendRow("'Greiðslur'!A:F", [l.name, todayISO(), 0, '', creditNote(l, used), 'Inneign']);
+      if (used > 0) await appendRow("'Greiðslur'!A:F", [l.name, todayISO(), used, '', creditNote(l, used), 'Inneign']);
     } else {
       await setCell(`'Tímar'!F${l.row}`, 'nei');
-      const toDelete = [findLessonPayment(l), findCreditUse(l)].filter(Boolean);
+      const toDelete = [findLessonPayment(l), ...findCreditUses(l)].filter(Boolean);
       if (toDelete.length) await deleteRows(toDelete.map(p => ({ sheetId: 2, row: p.row })));
     }
     await loadAll();
@@ -1037,29 +1049,42 @@ async function deleteLesson(l) {
 
 // Merkir elstu ógreiddu tímana greidda á meðan inneign nemandans dugar fyrir þeim.
 // Engin ný greiðslufærsla er búin til, því inneignin er þegar dregin frá í stöðunni.
-async function applyCredit() {
-  if (!currentStudent) return;
-  const name = currentStudent.name;
-  const unpaidOpen = lessons
+// Ráðstafar greiðslum og inneign nemandans á elstu ógreiddu tímana, líka að hluta. Skilar fjölda tíma sem fengu greiðslu.
+async function allocateCredit(name) {
+  const pool = payments
+    .filter(p => p.name === name && p.method !== 'Inneign')
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  const allocated = lessons
+    .filter(l => l.name === name)
+    .reduce((sum, l) => sum + lessonPaidAmount(l), 0);
+  let credit = pool - allocated;
+  const open = lessons
     .filter(l => l.name === name && l.status !== 'Aflýst' && l.paid.toLowerCase() !== 'já')
     .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-  const unpaidTotal = unpaidOpen.reduce((sum, l) => sum + lessonPrice(l), 0);
-  // Inneignin fyrir ógreidda tíma = summa ógreiddra tíma mínus stöðuna (neikvæð staða = inneign)
-  let credit = unpaidTotal - studentBalance(name);
-  const covered = [];
-  for (const l of unpaidOpen) {
-    const p = lessonPrice(l);
-    if (credit < p) break;
-    covered.push(l);
-    credit -= p;
+  const newUses = [];
+  const toMarkPaid = [];
+  for (const l of open) {
+    if (credit <= 0) break;
+    const remaining = lessonPrice(l) - lessonPaidAmount(l);
+    if (remaining <= 0) continue;
+    const take = Math.min(credit, remaining);
+    newUses.push([name, todayISO(), take, '', creditNote(l, take), 'Inneign']);
+    if (take >= remaining) toMarkPaid.push(l);
+    credit -= take;
   }
-  if (!covered.length) { msg('Engin inneign dugar fyrir ógreiddum tíma.', true); return; }
+  if (!newUses.length) return 0;
+  await appendRows("'Greiðslur'!A:F", newUses);
+  for (const l of toMarkPaid) await setCell(`'Tímar'!F${l.row}`, 'já');
+  await loadAll();
+  return newUses.length;
+}
+
+async function applyCredit() {
+  if (!currentStudent) return;
   try {
     msg('Ráðstafa inneign...');
-    for (const l of covered) await setCell(`'Tímar'!F${l.row}`, 'já');
-    await appendRows("'Greiðslur'!A:F", covered.map(l => [name, todayISO(), 0, '', creditNote(l, lessonPrice(l)), 'Inneign']));
-    await loadAll();
-    msg(`${covered.length} tímar merktir greiddir með inneigninni.`);
+    const n = await allocateCredit(currentStudent.name);
+    msg(n ? `Inneign ráðstöfuð á ${n} tíma.` : 'Engin inneign til ráðstöfunar.', !n);
   } catch (e) { msg(e.message, true); }
 }
 $('applyCreditBtn').onclick = applyCredit;
@@ -1202,8 +1227,9 @@ async function addPayment() {
     await appendRow("'Greiðslur'!A:F", [currentStudent.name, date, Number(amount), '', notes, $('pMethod').value]);
     $('pAmount').value = '';
     $('pNotes').value = '';
-    await loadAll();
-    msg('Greiðsla vistuð.');
+    // Greiðslan fer strax á elsta ógreidda tímann, líka að hluta.
+    const n = await allocateCredit(currentStudent.name);
+    msg(n ? `Greiðsla vistuð og sett á ${n} tíma.` : 'Greiðsla vistuð.');
   } catch (e) { msg(e.message, true); }
 }
 $('addPaymentBtn').onclick = addPayment;
