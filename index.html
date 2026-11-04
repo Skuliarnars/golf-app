@@ -183,6 +183,11 @@
         <h2>Skrá greiðslu</h2>
         <label>Upphæð (kr.)</label><input id="pAmount" type="number" min="0" step="500">
         <label>Dagsetning</label><input id="pDate" type="date">
+        <label>Greiðslumáti</label>
+        <select id="pMethod">
+          <option value="Millifærsla">Millifærsla</option>
+          <option value="Reiðufé">Reiðufé</option>
+        </select>
         <label>Athugasemd</label><input id="pNotes">
         <button id="addPaymentBtn">Vista greiðslu</button>
       </div>
@@ -481,7 +486,7 @@ async function loadAll() {
   const [n, t, g, s] = await Promise.all([
     getRows("'Nemendur'!A2:G"),
     getRows("'Tímar'!A2:J"),
-    getRows("'Greiðslur'!A2:E"),
+    getRows("'Greiðslur'!A2:F"),
     getRows("'Stillingar'!B1")
   ]);
   students = n.map((r, i) => ({ row: i + 2, name: r[0] || '', phone: r[1] || '', email: r[2] || '', goal: r[3] || '',
@@ -491,7 +496,7 @@ async function loadAll() {
                                status: r[4] || '', paid: r[5] || 'nei', notes: r[6] || '', eventId: r[7] || '',
                                location: r[8] || '', price: r[9] || '' }))
              .filter(l => l.name);
-  payments = g.map((r, i) => ({ row: i + 2, name: r[0] || '', date: r[1] || '', amount: r[2] || '', notes: r[4] || '' }))
+  payments = g.map((r, i) => ({ row: i + 2, name: r[0] || '', date: r[1] || '', amount: r[2] || '', notes: r[4] || '', method: r[5] || '' }))
               .filter(p => p.name);
   nextTimeRow = t.length + 2;
   await loadEventStatus();
@@ -745,7 +750,7 @@ function renderDetail() {
   myPayments.forEach(p => {
     const div = document.createElement('div');
     div.className = 'row';
-    div.innerHTML = `<div>${esc(p.date)} <span class="muted">${p.notes ? '· ' + esc(p.notes) : ''}</span></div>
+    div.innerHTML = `<div>${esc(p.date)} <span class="muted">${p.method ? '· ' + esc(p.method) : ''}${p.notes ? ' · ' + esc(p.notes) : ''}</span></div>
                      <strong>${esc(p.amount)} kr.</strong>`;
     const delP = document.createElement('button');
     delP.className = 'danger';
@@ -806,7 +811,7 @@ function renderPayments() {
     div.className = 'row';
     div.style.cursor = 'pointer';
     div.innerHTML = `<div><strong>${esc(p.name)}</strong>
-      <div class="muted">${esc(p.date)}${p.notes ? ' · ' + esc(p.notes) : ''}</div></div>
+      <div class="muted">${esc(p.date)}${p.method ? ' · ' + esc(p.method) : ''}${p.notes ? ' · ' + esc(p.notes) : ''}</div></div>
       <strong>${esc(p.amount)} kr.</strong>`;
     div.onclick = () => showDetail(p.name);
     el.appendChild(div);
@@ -979,8 +984,13 @@ async function togglePaid(l) {
       const pre = studentBalance(l.name) - lessonPrice(l);
       const credit = Math.max(0, -pre);
       const toPay = Math.max(0, lessonPrice(l) - credit);
+      let method = '';
+      if (toPay > 0) {
+        method = askMethod();
+        if (!method) { msg('Hætt við.'); return; }
+      }
       await setCell(`'Tímar'!F${l.row}`, 'já');
-      if (toPay > 0) await appendRow("'Greiðslur'!A:E", [l.name, todayISO(), toPay, '', paymentMarker(l)]);
+      if (toPay > 0) await appendRow("'Greiðslur'!A:F", [l.name, todayISO(), toPay, '', paymentMarker(l), method]);
     } else {
       await setCell(`'Tímar'!F${l.row}`, 'nei');
       const p = findLessonPayment(l);
@@ -1152,6 +1162,13 @@ async function saveLessonNotes() {
 $('saveLessonNotesBtn').onclick = saveLessonEdit;
 $('leLocation').onchange = toggleLeOther;
 
+// Spyr um greiðslumáta. Skilar 'Reiðufé', 'Millifærsla' eða null ef hætt er við.
+function askMethod() {
+  const v = prompt('Hvernig var greitt?\n1 = Reiðufé\n2 = Millifærsla', '2');
+  if (v === null) return null;
+  return v.trim() === '1' ? 'Reiðufé' : 'Millifærsla';
+}
+
 // ----- Greiðslur: skrá og eyða -----
 async function addPayment() {
   const amount = $('pAmount').value;
@@ -1161,7 +1178,7 @@ async function addPayment() {
   if (!currentStudent) return;
   try {
     msg('Vista greiðslu...');
-    await appendRow("'Greiðslur'!A:E", [currentStudent.name, date, Number(amount), '', notes]);
+    await appendRow("'Greiðslur'!A:F", [currentStudent.name, date, Number(amount), '', notes, $('pMethod').value]);
     $('pAmount').value = '';
     $('pNotes').value = '';
     await loadAll();
