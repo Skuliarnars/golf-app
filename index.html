@@ -566,6 +566,9 @@ function lessonPrice(l) {
 }
 function paymentMarker(l) { return `Tími ${l.date} ${l.time}`; }
 function findLessonPayment(l) { return payments.find(p => p.name === l.name && p.notes === paymentMarker(l)); }
+// Ráðstöfun inneignar á tíma er skráð sem færsla með 0 kr. og athugasemd um tímann, svo sjáist á greiðslum nemandans.
+function creditNote(l, amount) { return `Inneign ${amount.toLocaleString('is-IS')} kr. á ${paymentMarker(l)}`; }
+function findCreditUse(l) { return payments.find(p => p.name === l.name && p.method === 'Inneign' && p.notes.endsWith(paymentMarker(l))); }
 
 // Staða nemanda: jákvæð tala = nemandinn skuldar, neikvæð = inneign hjá nemandanum.
 // Tímar sem eru ekki aflýstir (eða eru greiddir) eru rukkaðir, og allar greiðslur dregnar frá.
@@ -1006,10 +1009,12 @@ async function togglePaid(l) {
       }
       await setCell(`'Tímar'!F${l.row}`, 'já');
       if (toPay > 0) await appendRow("'Greiðslur'!A:F", [l.name, todayISO(), toPay, '', paymentMarker(l), method]);
+      const used = Math.min(credit, lessonPrice(l));
+      if (used > 0) await appendRow("'Greiðslur'!A:F", [l.name, todayISO(), 0, '', creditNote(l, used), 'Inneign']);
     } else {
       await setCell(`'Tímar'!F${l.row}`, 'nei');
-      const p = findLessonPayment(l);
-      if (p) await deleteRows([{ sheetId: 2, row: p.row }]);
+      const toDelete = [findLessonPayment(l), findCreditUse(l)].filter(Boolean);
+      if (toDelete.length) await deleteRows(toDelete.map(p => ({ sheetId: 2, row: p.row })));
     }
     await loadAll();
     msg(becomingPaid ? 'Merkt greitt og greiðslu bætt við.' : 'Afmerkt og greiðslu eytt.');
@@ -1052,6 +1057,7 @@ async function applyCredit() {
   try {
     msg('Ráðstafa inneign...');
     for (const l of covered) await setCell(`'Tímar'!F${l.row}`, 'já');
+    await appendRows("'Greiðslur'!A:F", covered.map(l => [name, todayISO(), 0, '', creditNote(l, lessonPrice(l)), 'Inneign']));
     await loadAll();
     msg(`${covered.length} tímar merktir greiddir með inneigninni.`);
   } catch (e) { msg(e.message, true); }
