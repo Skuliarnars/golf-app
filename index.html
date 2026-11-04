@@ -1048,6 +1048,8 @@ async function bookLesson() {
   const eh = String(Math.floor(endTotal / 60) % 24).padStart(2, '0');
   const em = String(endTotal % 60).padStart(2, '0');
   const summary = `${names.join(' & ')} - golfkennsla`;
+  // Ef tíminn endar eftir miðnætti fer endinn á næsta dag
+  const endDay = endTotal >= 1440 ? 1 : 0;
 
   try {
     const rows = [];
@@ -1062,7 +1064,7 @@ async function bookLesson() {
           location: location,
           description: [location, notes].filter(Boolean).join(' · '),
           start: { dateTime: `${d}T${time}:00`, timeZone: TZ },
-          end: { dateTime: `${d}T${eh}:${em}:00`, timeZone: TZ },
+          end: { dateTime: `${addDaysISO(d, endDay)}T${eh}:${em}:00`, timeZone: TZ },
           attendees: attendees
         })
       });
