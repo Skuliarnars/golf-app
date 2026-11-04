@@ -910,8 +910,10 @@ async function bookLesson() {
       })
     });
     // Ein lína í Tímar fyrir hvern nemanda, allar með sama viðburðarauðkenni.
-    const rows = chosen.map(s => [s.name, date, time, mins, 'Bokaður', 'nei', notes, ev.id, location, share]);
-    await setRange(`'Tímar'!A${nextTimeRow}:J${nextTimeRow + rows.length - 1}`, rows);
+    const bookedAt = new Date().toISOString();
+    // Dálkur K (Áminning send) er tómur hér, bókunartíminn fer í L.
+    const rows = chosen.map(s => [s.name, date, time, mins, 'Bokaður', 'nei', notes, ev.id, location, share, '', bookedAt]);
+    await setRange(`'Tímar'!A${nextTimeRow}:L${nextTimeRow + rows.length - 1}`, rows);
     $('lNotes').value = '';
     $('lLocationOther').value = '';
     $('lPrice').value = '';
