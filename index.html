@@ -1073,7 +1073,7 @@ async function allocateCredit(name) {
     if (take >= remaining) toMarkPaid.push(l);
     credit -= take;
   }
-  if (!newUses.length) return 0;
+  if (!newUses.length) { await loadAll(); return 0; }
   await appendRows("'Greiðslur'!A:F", newUses);
   for (const l of toMarkPaid) await setCell(`'Tímar'!F${l.row}`, 'já');
   await loadAll();
