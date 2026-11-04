@@ -14,7 +14,7 @@
   header { background: #1f5c35; color: #fff; padding: 14px 16px; padding-top: calc(14px + env(safe-area-inset-top, 0px));
            display: flex; justify-content: space-between; align-items: center; gap: 8px; position: sticky; top: 0; z-index: 5; }
   header h1 { font-size: 18px; margin: 0; font-weight: 600; flex: 1; }
-  main { padding: 16px; padding-bottom: 90px; max-width: 640px; margin: 0 auto; }
+  main { padding: 16px; padding-bottom: 120px; max-width: 640px; margin: 0 auto; }
   .card { background: #fff; border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
   button { background: #1f5c35; color: #fff; border: 0; border-radius: 8px; padding: 10px 14px; font-size: 15px; cursor: pointer; }
   button.secondary { background: #e6ece7; color: #1d2a1f; }
@@ -47,12 +47,14 @@
   .chip-x { background: transparent; color: #1f5c35; padding: 0 8px; font-size: 18px; line-height: 1; }
   #lStudents input { width: 100%; }
   .result { display: block; width: 100%; text-align: left; margin-bottom: 6px; }
-  .fab { position: fixed; right: 16px; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); width: 56px; height: 56px;
+  .fab { position: fixed; right: 16px; bottom: calc(100px + env(safe-area-inset-bottom, 0px)); width: 56px; height: 56px;
          border-radius: 50%; font-size: 30px; line-height: 1; padding: 0; display: flex; align-items: center; justify-content: center;
          box-shadow: 0 2px 8px rgba(0,0,0,.25); z-index: 6; }
   .tabbar { position: fixed; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(5, 1fr); background: #fff;
             border-top: 1px solid #dde3de; padding-bottom: env(safe-area-inset-bottom, 0px); z-index: 5; }
-  .tabbar button { background: transparent; color: #6b776e; border-radius: 0; padding: 10px 2px; font-size: 12px; }
+  .tabbar button { background: transparent; color: #6b776e; border-radius: 0; padding: 10px 4px 12px; font-size: 13px;
+                   display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .tabbar svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .tabbar button.active { color: #1f5c35; font-weight: 600; }
 </style>
 </head>
@@ -223,11 +225,26 @@
     </div>
 
     <nav id="tabBar" class="tabbar hidden">
-      <button id="tabDash">Yfirlit</button>
-      <button id="tabStudents">Nemendur</button>
-      <button id="tabLessons">Tímar</button>
-      <button id="tabPayments">Greiðslur</button>
-      <button id="tabSettings">Stillingar</button>
+      <button id="tabDash">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+        <span>Yfirlit</span>
+      </button>
+      <button id="tabStudents">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6"/><path d="M16 4a4 4 0 010 8"/><path d="M22 21c0-3-2-5-5-6"/></svg>
+        <span>Nemendur</span>
+      </button>
+      <button id="tabLessons">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        <span>Tímar</span>
+      </button>
+      <button id="tabPayments">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+        <span>Greiðslur</span>
+      </button>
+      <button id="tabSettings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8" stroke-dasharray="4 3"/></svg>
+        <span>Stillingar</span>
+      </button>
     </nav>
     <button id="addNewBtn" class="fab hidden" aria-label="Nýr nemandi">+</button>
     <div id="msg" class="status"></div>
