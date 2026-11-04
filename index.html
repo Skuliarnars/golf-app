@@ -785,15 +785,30 @@ function renderLessons() {
     head.className = 'day-head' + (day < today ? ' past' : '');
     head.textContent = dayLabel(day);
     el.appendChild(head);
+    // Tímar með sama viðburði (fleiri nemendur í sama tíma) birtast sem einn tími
+    const groups = [];
+    const byEvent = {};
     dayLessons.forEach(l => {
-      const paid = l.paid.toLowerCase() === 'já';
+      if (l.eventId) {
+        if (!byEvent[l.eventId]) { byEvent[l.eventId] = []; groups.push(byEvent[l.eventId]); }
+        byEvent[l.eventId].push(l);
+      } else {
+        groups.push([l]);
+      }
+    });
+    groups.forEach(g => {
+      const first = g[0];
+      const names = g.map(x => x.name).join(' & ');
+      const allPaid = g.every(x => x.paid.toLowerCase() === 'já');
+      const allAccepted = g.every(x => isAccepted(x));
+      const dot = allAccepted ? '<span class="dot" title="Samþykkt í dagatali"></span>' : '';
       const div = document.createElement('div');
       div.className = 'row';
       div.style.cursor = 'pointer';
-      div.innerHTML = `<div><strong>${esc(l.time)}</strong> ${esc(l.name)}${acceptDot(l)}
-        <div class="muted">${l.location ? esc(l.location) + ' · ' : ''}${esc(l.status)}</div></div>
-        <span class="badge ${paid ? 'ok' : ''}">${paid ? 'Greitt' : 'Ógreitt'}</span>`;
-      div.onclick = () => showLessonEdit(l.row);
+      div.innerHTML = `<div><strong>${esc(first.time)}</strong> ${esc(names)}${dot}
+        <div class="muted">${first.location ? esc(first.location) + ' · ' : ''}${esc(first.status)}</div></div>
+        <span class="badge ${allPaid ? 'ok' : ''}">${allPaid ? 'Greitt' : 'Ógreitt'}</span>`;
+      div.onclick = () => showLessonEdit(first.row);
       el.appendChild(div);
     });
   });
