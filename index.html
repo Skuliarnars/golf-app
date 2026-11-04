@@ -177,11 +177,11 @@
         <input id="lLocationOther" class="hidden" placeholder="Skrifaðu staðsetninguna">
         <label>Athugasemdir</label><input id="lNotes">
         <label style="display:flex;gap:8px;align-items:center;margin:6px 0">
-          <input id="lRepeat" type="checkbox" style="width:auto;margin:0"> Endurtaka vikulega
+          <input id="lRepeat" type="checkbox" style="width:auto;margin:0"> Endurtekning
         </label>
         <select id="lInterval" class="hidden">
           <option value="week">Vikulega</option>
-          <option value="two">Annanhverja viku</option>
+          <option value="two">Aðra hverja viku</option>
           <option value="month">Mánaðarlega</option>
           <option value="nth">Ákveðinn vikudagur í mánuði</option>
         </select>
@@ -203,7 +203,8 @@
             <option value="0">sunnudagur</option>
           </select>
         </div>
-        <input id="lWeeks" type="number" min="2" max="26" value="8" class="hidden" placeholder="Fjöldi tíma">
+        <label id="lWeeksLabel" class="hidden">Fjöldi tíma sem á að bóka (mest 26)</label>
+        <input id="lWeeks" type="number" min="2" max="26" value="8" class="hidden">
         <button id="bookBtn">Bóka og setja í dagatal</button>
       </div>
 
@@ -1085,6 +1086,7 @@ function syncRepeatUI() {
   const on = $('lRepeat').checked;
   const nth = on && $('lInterval').value === 'nth';
   $('lWeeks').classList.toggle('hidden', !on);
+  $('lWeeksLabel').classList.toggle('hidden', !on);
   $('lInterval').classList.toggle('hidden', !on);
   $('nthRow').classList.toggle('hidden', !nth);
 }
