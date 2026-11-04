@@ -660,7 +660,9 @@ function renderDash() {
   const today = todayISO();
   const weekEnd = addDaysISO(today, 7);
   const active = lessons.filter(l => l.status !== 'Aflýst');
-  const upcoming = active.filter(l => l.date >= today)
+  const nowKey = todayISO() + ' ' + String(new Date().getHours()).padStart(2, '0') + ':' + String(new Date().getMinutes()).padStart(2, '0');
+  // Tímar sem eru byrjaðir eða liðnir eru ekki taldir framundan
+  const upcoming = active.filter(l => (l.date + ' ' + l.time) >= nowKey)
     .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
   const next7 = upcoming.filter(l => l.date <= weekEnd).length;
   const unpaidTotal = students.reduce((sum, s) => sum + Math.max(studentBalance(s.name), 0), 0);
