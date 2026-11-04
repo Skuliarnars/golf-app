@@ -758,7 +758,8 @@ function renderDetail() {
   });
 
   // Greiðslur
-  const myPayments = payments.filter(p => p.name === s.name);
+  // Ráðstafanir inneignar eru ekki greiðslur, þær birtast á tímunum sjálfum
+  const myPayments = payments.filter(p => p.name === s.name && p.method !== 'Inneign');
   const payEl = $('paymentList');
   payEl.innerHTML = '';
   if (!myPayments.length) payEl.innerHTML = '<p class="muted">Engar greiðslur skráðar.</p>';
@@ -836,7 +837,7 @@ function renderPayments() {
   const el = $('allPaymentsList');
   el.innerHTML = '';
   if (!payments.length) { el.innerHTML = '<p class="muted">Engar greiðslur skráðar.</p>'; return; }
-  [...payments].sort((a, b) => String(b.date).localeCompare(String(a.date))).forEach(p => {
+  [...payments].filter(p => p.method !== 'Inneign').sort((a, b) => String(b.date).localeCompare(String(a.date))).forEach(p => {
     const div = document.createElement('div');
     div.className = 'row';
     div.style.cursor = 'pointer';
