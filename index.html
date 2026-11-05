@@ -231,21 +231,6 @@
         <div id="videoList"></div>
         <hr style="border:0;border-top:1px solid #eef1ee;margin:12px 0">
         <button id="openRecBtn" class="secondary" style="width:100%;margin-bottom:10px">Taka upp myndskeið</button>
-        <div id="recorder" class="hidden" style="margin-bottom:12px">
-          <video id="recPreview" autoplay muted playsinline style="width:100%;border-radius:10px;background:#000"></video>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <button id="recStart">Byrja upptöku</button>
-            <button id="recStop" class="danger hidden">Stöðva</button>
-            <button id="recCancel" class="secondary">Loka</button>
-          </div>
-          <div id="recConfirm" class="hidden" style="margin-top:10px">
-            <p id="recQuestion" style="font-size:15px;margin:0 0 8px"></p>
-            <div style="display:flex;gap:8px">
-              <button id="recUpload">Hlaða upp í Drive</button>
-              <button id="recDiscard" class="secondary">Henda</button>
-            </div>
-          </div>
-        </div>
         <label>Tími</label>
         <select id="vLesson"></select>
         <label>Myndskeið</label>
@@ -323,11 +308,28 @@
         <label>Hvernig gekk tíminn?</label>
         <textarea id="leNotes" rows="6"></textarea>
         <h2 style="margin-top:14px">Myndskeið</h2>
+        <button id="leRecBtn" class="secondary" style="width:100%;margin-bottom:10px">Taka upp myndskeið</button>
         <div id="leVideos"></div>
         <button id="saveLessonNotesBtn">Vista breytingar</button>
       </div>
     </div>
 
+    <div id="recorder" class="hidden" style="position:fixed;inset:0;background:#f4f6f4;z-index:20;padding:16px;padding-top:calc(16px + env(safe-area-inset-top, 0px));overflow:auto">
+      <h2 style="margin-top:0">Taka upp myndskeið</h2>
+          <video id="recPreview" autoplay muted playsinline style="width:100%;border-radius:10px;background:#000"></video>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button id="recStart">Byrja upptöku</button>
+            <button id="recStop" class="danger hidden">Stöðva</button>
+            <button id="recCancel" class="secondary">Loka</button>
+          </div>
+          <div id="recConfirm" class="hidden" style="margin-top:10px">
+            <p id="recQuestion" style="font-size:15px;margin:0 0 8px"></p>
+            <div style="display:flex;gap:8px">
+              <button id="recUpload">Hlaða upp í Drive</button>
+              <button id="recDiscard" class="secondary">Henda</button>
+            </div>
+          </div>
+        </div>
     <nav id="tabBar" class="tabbar hidden">
       <button id="tabDash">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
@@ -1179,22 +1181,27 @@ function pickRecMime() {
   }
   return '';
 }
-async function openRecorder() {
-  if (!currentStudent) return;
-  if (!$('vLesson').value) { msg('Veldu tíma fyrst.', true); return; }
+let recLessonRow = null;
+async function openRecorder(row) {
+  const lessonRow = row || Number($('vLesson').value);
+  const l = lessons.find(x => x.row === Number(lessonRow));
+  if (!l) { msg('Veldu tíma fyrst.', true); return; }
+  recLessonRow = l.row;
   if (!navigator.mediaDevices || !window.MediaRecorder) {
     msg('Þessi vafri styður ekki upptöku. Prófaðu Safari eða Chrome.', true);
     return;
   }
   try {
-    recStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: true });
+    recStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+      audio: true
+    });
   } catch (e) {
     msg('Ekki tókst að opna myndavélina. Leyfðu aðgang að myndavél og hljóðnema.', true);
     return;
   }
   $('recPreview').srcObject = recStream;
   $('recorder').classList.remove('hidden');
-  $('openRecBtn').classList.add('hidden');
   $('recConfirm').classList.add('hidden');
   $('recStart').classList.remove('hidden');
   $('recStop').classList.add('hidden');
@@ -1211,7 +1218,9 @@ function closeRecorder() {
 function startRecording() {
   recMime = pickRecMime();
   recChunks = [];
-  recorder = new MediaRecorder(recStream, recMime ? { mimeType: recMime } : {});
+  const recOpts = { videoBitsPerSecond: 4000000, audioBitsPerSecond: 128000 };
+  if (recMime) recOpts.mimeType = recMime;
+  recorder = new MediaRecorder(recStream, recOpts);
   recorder.ondataavailable = e => { if (e.data && e.data.size) recChunks.push(e.data); };
   recorder.onstop = () => {
     recBlob = new Blob(recChunks, { type: recorder.mimeType || recMime || 'video/webm' });
@@ -1230,15 +1239,16 @@ function stopRecording() {
 }
 // Spyr áður en myndskeiðið er hlaðið upp
 function showRecConfirm() {
-  const opt = $('vLesson').selectedOptions[0];
+  const l = lessons.find(x => x.row === recLessonRow);
   const mb = (recBlob.size / 1048576).toFixed(1);
-  $('recQuestion').textContent = `Viltu hlaða myndskeiðinu inn í Drive fyrir tímann ${opt ? opt.textContent : ''}? (${mb} MB)`;
+  $('recQuestion').textContent = `Viltu hlaða myndskeiðinu inn í Drive fyrir tímann ${l ? l.date + ' kl. ' + l.time : ''}? (${mb} MB)`;
   $('recConfirm').classList.remove('hidden');
   msg('');
 }
 async function uploadBlob(blob, name, mime, l) {
   msg('Set upp möppu...');
-  const folder = await getLessonFolder(currentStudent, l.date);
+  const student = students.find(x => x.name === l.name);
+  const folder = await getLessonFolder(student, l.date);
   msg('Hleð upp myndskeiði... Þetta getur tekið smá tíma.');
   const init = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
     method: 'POST',
@@ -1257,14 +1267,15 @@ async function uploadBlob(blob, name, mime, l) {
   await loadVideos();
 }
 async function uploadRecording() {
-  const l = lessons.find(x => x.row === Number($('vLesson').value));
-  if (!l || !recBlob || !currentStudent) return;
+  const l = lessons.find(x => x.row === recLessonRow);
+  if (!l || !recBlob) return;
   const ext = (recBlob.type || '').includes('mp4') ? 'mp4' : 'webm';
   const t = new Date();
   const name = `upptaka ${l.date} ${String(t.getHours()).padStart(2, '0')}-${String(t.getMinutes()).padStart(2, '0')}.${ext}`;
   try {
     await uploadBlob(recBlob, name, recBlob.type || 'video/webm', l);
     closeRecorder();
+    loadLessonVideos(l);
   } catch (e) { msg(e.message, true); }
 }
 function discardRecording() {
@@ -1274,7 +1285,8 @@ function discardRecording() {
   $('recStart').classList.remove('hidden');
   msg('Myndskeiði hent.');
 }
-$('openRecBtn').onclick = openRecorder;
+$('openRecBtn').onclick = () => openRecorder();
+$('leRecBtn').onclick = () => openRecorder(editingLessonRow);
 $('recStart').onclick = startRecording;
 $('recStop').onclick = stopRecording;
 $('recCancel').onclick = closeRecorder;
