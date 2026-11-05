@@ -306,6 +306,8 @@
         </select>
         <label>Hvernig gekk tíminn?</label>
         <textarea id="leNotes" rows="6"></textarea>
+        <h2 style="margin-top:14px">Myndskeið</h2>
+        <div id="leVideos"></div>
         <button id="saveLessonNotesBtn">Vista breytingar</button>
       </div>
     </div>
@@ -1043,6 +1045,58 @@ async function loadVideos() {
   }
 }
 
+// Eitt myndskeið í lista: smámynd, nafn og hlekkur til að opna
+function buildVideoRow(f, label) {
+  const div = document.createElement('div');
+  div.className = 'row';
+  const thumb = document.createElement('div');
+  thumb.style.cssText = 'width:72px;height:54px;border-radius:8px;background:#e6ece7;flex:0 0 72px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#6b776e;font-size:12px';
+  thumb.textContent = '▶';
+  if (f.thumbnailLink) {
+    fetch(f.thumbnailLink, { headers: { 'Authorization': 'Bearer ' + accessToken } })
+      .then(r => r.ok ? r.blob() : Promise.reject())
+      .then(b => {
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(b);
+        img.style.cssText = 'width:100%;height:100%;object-fit:cover';
+        thumb.textContent = '';
+        thumb.appendChild(img);
+      })
+      .catch(() => {});
+  }
+  const info = document.createElement('div');
+  info.style.flex = '1';
+  info.innerHTML = `<div style="font-size:14px">${esc(f.name)}</div><div class="muted">${esc(label)}</div>`;
+  const open = document.createElement('a');
+  open.href = f.webViewLink || '#';
+  open.target = '_blank';
+  open.rel = 'noopener';
+  open.textContent = 'Opna';
+  open.style.cssText = 'color:#1f5c35;font-weight:600;text-decoration:none;padding:6px';
+  div.append(thumb, info, open);
+  return div;
+}
+
+// Myndskeið sem tilheyra þessum tíma: undirmappa með dagsetningu tímans í möppu nemandans
+async function loadLessonVideos(l) {
+  const el = $('leVideos');
+  el.innerHTML = '<p class="muted">Sæki myndskeið...</p>';
+  const s = students.find(x => x.name === l.name);
+  if (!s || !s.driveFolder) { el.innerHTML = '<p class="muted">Engin myndskeið á þessum tíma.</p>'; return; }
+  try {
+    const q = `name = '${l.date}' and '${s.driveFolder}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    const d = await api(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
+    if (!d.files || !d.files.length) { el.innerHTML = '<p class="muted">Engin myndskeið á þessum tíma.</p>'; return; }
+    const vQ = `'${d.files[0].id}' in parents and mimeType contains 'video/' and trashed = false`;
+    const v = await api(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(vQ)}&fields=files(id,name,thumbnailLink,webViewLink)&pageSize=200`);
+    if (!v.files || !v.files.length) { el.innerHTML = '<p class="muted">Engin myndskeið á þessum tíma.</p>'; return; }
+    el.innerHTML = '';
+    v.files.forEach(f => el.appendChild(buildVideoRow(f, l.date)));
+  } catch (e) {
+    el.innerHTML = `<p class="muted">Ekki tókst að sækja myndskeið: ${esc(e.message)}</p>`;
+  }
+}
+
 // Fyllir valmynd með tímum nemandans fyrir upphleðslu
 function renderVideoLessons() {
   const sel = $('vLesson');
@@ -1527,6 +1581,7 @@ function showLessonEdit(row) {
   }
   toggleLeOther();
   $('leNotes').value = l.notes;
+  loadLessonVideos(l);
   msg('');
 }
 async function saveLessonNotes() {
