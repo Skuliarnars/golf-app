@@ -230,6 +230,22 @@
         <h2>Myndskeið</h2>
         <div id="videoList"></div>
         <hr style="border:0;border-top:1px solid #eef1ee;margin:12px 0">
+        <button id="openRecBtn" class="secondary" style="width:100%;margin-bottom:10px">Taka upp myndskeið</button>
+        <div id="recorder" class="hidden" style="margin-bottom:12px">
+          <video id="recPreview" autoplay muted playsinline style="width:100%;border-radius:10px;background:#000"></video>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button id="recStart">Byrja upptöku</button>
+            <button id="recStop" class="danger hidden">Stöðva</button>
+            <button id="recCancel" class="secondary">Loka</button>
+          </div>
+          <div id="recConfirm" class="hidden" style="margin-top:10px">
+            <p id="recQuestion" style="font-size:15px;margin:0 0 8px"></p>
+            <div style="display:flex;gap:8px">
+              <button id="recUpload">Hlaða upp í Drive</button>
+              <button id="recDiscard" class="secondary">Henda</button>
+            </div>
+          </div>
+        </div>
         <label>Tími</label>
         <select id="vLesson"></select>
         <label>Myndskeið</label>
@@ -603,6 +619,7 @@ function renderAll() {
 
 // ----- Leiðsögn -----
 function goTab(name) {
+  closeRecorder();
   currentStudent = null;
   const cfg = TABS[name];
   VIEWS.forEach(v => $(v).classList.toggle('hidden', v !== cfg.view));
@@ -1152,6 +1169,117 @@ async function uploadVideo() {
   } catch (e) { msg(e.message, true); }
 }
 $('uploadVideoBtn').onclick = uploadVideo;
+
+// ----- Taka upp myndskeið beint í appinu -----
+let recStream = null, recorder = null, recChunks = [], recBlob = null, recMime = '';
+function pickRecMime() {
+  const options = ['video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'];
+  for (const o of options) {
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(o)) return o;
+  }
+  return '';
+}
+async function openRecorder() {
+  if (!currentStudent) return;
+  if (!$('vLesson').value) { msg('Veldu tíma fyrst.', true); return; }
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    msg('Þessi vafri styður ekki upptöku. Prófaðu Safari eða Chrome.', true);
+    return;
+  }
+  try {
+    recStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: true });
+  } catch (e) {
+    msg('Ekki tókst að opna myndavélina. Leyfðu aðgang að myndavél og hljóðnema.', true);
+    return;
+  }
+  $('recPreview').srcObject = recStream;
+  $('recorder').classList.remove('hidden');
+  $('openRecBtn').classList.add('hidden');
+  $('recConfirm').classList.add('hidden');
+  $('recStart').classList.remove('hidden');
+  $('recStop').classList.add('hidden');
+}
+function closeRecorder() {
+  if (recorder && recorder.state !== 'inactive') { try { recorder.stop(); } catch (e) {} }
+  if (recStream) { recStream.getTracks().forEach(t => t.stop()); recStream = null; }
+  $('recPreview').srcObject = null;
+  $('recorder').classList.add('hidden');
+  $('openRecBtn').classList.remove('hidden');
+  recChunks = [];
+  recBlob = null;
+}
+function startRecording() {
+  recMime = pickRecMime();
+  recChunks = [];
+  recorder = new MediaRecorder(recStream, recMime ? { mimeType: recMime } : {});
+  recorder.ondataavailable = e => { if (e.data && e.data.size) recChunks.push(e.data); };
+  recorder.onstop = () => {
+    recBlob = new Blob(recChunks, { type: recorder.mimeType || recMime || 'video/webm' });
+    if (recStream) { recStream.getTracks().forEach(t => t.stop()); recStream = null; }
+    $('recPreview').srcObject = null;
+    showRecConfirm();
+  };
+  recorder.start(1000);
+  $('recStart').classList.add('hidden');
+  $('recStop').classList.remove('hidden');
+  msg('Upptaka í gangi...');
+}
+function stopRecording() {
+  if (recorder && recorder.state !== 'inactive') recorder.stop();
+  $('recStop').classList.add('hidden');
+}
+// Spyr áður en myndskeiðið er hlaðið upp
+function showRecConfirm() {
+  const opt = $('vLesson').selectedOptions[0];
+  const mb = (recBlob.size / 1048576).toFixed(1);
+  $('recQuestion').textContent = `Viltu hlaða myndskeiðinu inn í Drive fyrir tímann ${opt ? opt.textContent : ''}? (${mb} MB)`;
+  $('recConfirm').classList.remove('hidden');
+  msg('');
+}
+async function uploadBlob(blob, name, mime, l) {
+  msg('Set upp möppu...');
+  const folder = await getLessonFolder(currentStudent, l.date);
+  msg('Hleð upp myndskeiði... Þetta getur tekið smá tíma.');
+  const init = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + accessToken,
+      'Content-Type': 'application/json; charset=UTF-8',
+      'X-Upload-Content-Type': mime,
+      'X-Upload-Content-Length': String(blob.size)
+    },
+    body: JSON.stringify({ name: name, parents: [folder] })
+  });
+  if (!init.ok) throw new Error('Upphleðsla mistókst (' + init.status + ')');
+  const put = await fetch(init.headers.get('Location'), { method: 'PUT', headers: { 'Content-Type': mime }, body: blob });
+  if (!put.ok) throw new Error('Upphleðsla mistókst (' + put.status + ')');
+  msg('Myndskeið komið í Drive.');
+  await loadVideos();
+}
+async function uploadRecording() {
+  const l = lessons.find(x => x.row === Number($('vLesson').value));
+  if (!l || !recBlob || !currentStudent) return;
+  const ext = (recBlob.type || '').includes('mp4') ? 'mp4' : 'webm';
+  const t = new Date();
+  const name = `upptaka ${l.date} ${String(t.getHours()).padStart(2, '0')}-${String(t.getMinutes()).padStart(2, '0')}.${ext}`;
+  try {
+    await uploadBlob(recBlob, name, recBlob.type || 'video/webm', l);
+    closeRecorder();
+  } catch (e) { msg(e.message, true); }
+}
+function discardRecording() {
+  recBlob = null;
+  recChunks = [];
+  $('recConfirm').classList.add('hidden');
+  $('recStart').classList.remove('hidden');
+  msg('Myndskeiði hent.');
+}
+$('openRecBtn').onclick = openRecorder;
+$('recStart').onclick = startRecording;
+$('recStop').onclick = stopRecording;
+$('recCancel').onclick = closeRecorder;
+$('recUpload').onclick = uploadRecording;
+$('recDiscard').onclick = discardRecording;
 
 // ----- Nemendur: bæta við, breyta, eyða -----
 async function addStudent() {
